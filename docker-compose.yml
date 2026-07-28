@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  project-waifu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: project-waifu
+    restart: unless-stopped
+    ports:
+      - "3020:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - OPENWEBUI_BASE_URL=${OPENWEBUI_BASE_URL:-http://host.docker.internal:3000/api}
+      - OPENWEBUI_API_KEY=${OPENWEBUI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

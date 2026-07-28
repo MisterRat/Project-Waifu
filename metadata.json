@@ -1,0 +1,6 @@
+{
+  "name": "Project Waifu",
+  "description": "Live2D AI companion browser interface, project scope, Python minimal backend architecture, OpenWebUI API bridge, STT & TTS pipeline.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
