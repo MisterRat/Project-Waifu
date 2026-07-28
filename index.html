@@ -4,65 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Project Waifu - Live2D Companion</title>
-    <!-- WebGL compatibility patch for virtualized/headless GPU environments -->
-    <script>
-      (function() {
-        function patchGLContext(gl) {
-          if (!gl || gl.__getParameterPatched) return gl;
-          gl.__getParameterPatched = true;
-          var origGetParameter = gl.getParameter;
-          gl.getParameter = function(p) {
-            var val;
-            try {
-              val = origGetParameter.apply(this, arguments);
-            } catch (e) {
-              val = null;
-            }
-            if (val === 0 || val === null || val === undefined) {
-              // 0x8DFB: MAX_VERTEX_UNIFORM_VECTORS
-              // 0x8DFD: MAX_FRAGMENT_UNIFORM_VECTORS
-              // 0x8DFC: MAX_VARYING_VECTORS
-              if (p === 0x8DFB || p === 0x8DFD || p === 0x8DFC) return 32;
-              // 0x8B49: MAX_FRAGMENT_UNIFORM_COMPONENTS
-              // 0x8B4A: MAX_VERTEX_UNIFORM_COMPONENTS
-              if (p === 0x8B49 || p === 0x8B4A) return 512;
-              // 0x8872: MAX_TEXTURE_IMAGE_UNITS
-              // 0x8B4C: MAX_VERTEX_TEXTURE_IMAGE_UNITS
-              // 0x8B4D: MAX_COMBINED_TEXTURE_IMAGE_UNITS
-              if (p === 0x8872 || p === 0x8B4C || p === 0x8B4D) return 16;
-              // 0x8869: MAX_VERTEX_ATTRIBS
-              if (p === 0x8869) return 16;
-              // Generic numeric query returning 0 in headless/virtual WebGL
-              if (typeof val === 'number' || val === null || val === undefined) return 16;
-            }
-            return val;
-          };
-          return gl;
-        }
-
-        if (typeof HTMLCanvasElement !== 'undefined') {
-          var origGetContext = HTMLCanvasElement.prototype.getContext;
-          HTMLCanvasElement.prototype.getContext = function(type, attributes) {
-            if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') {
-              attributes = attributes || {};
-              attributes.failIfMajorPerformanceCaveat = false;
-            }
-            var ctx = origGetContext.call(this, type, attributes);
-            if (ctx && (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl')) {
-              patchGLContext(ctx);
-            }
-            return ctx;
-          };
-        }
-
-        if (typeof WebGLRenderingContext !== 'undefined') {
-          patchGLContext(WebGLRenderingContext.prototype);
-        }
-        if (typeof WebGL2RenderingContext !== 'undefined') {
-          patchGLContext(WebGL2RenderingContext.prototype);
-        }
-      })();
-    </script>
+    <!-- WebGL compatibility patch removed (handled in app code) -->
     <!-- Cubism 2 Core -->
     <script src="/live2d.min.js"></script>
     <!-- Cubism 4 Core SDK -->

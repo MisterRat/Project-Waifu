@@ -8,7 +8,7 @@ import { OpenWebUIConfig, TTSConfig, STTConfig } from "./types";
 import { ScopeViewer } from "./components/ScopeViewer";
 import { OpenWebUITester } from "./components/OpenWebUITester";
 import { VoicePipelineTester } from "./components/VoicePipelineTester";
-import { PythonCodeExporter } from "./components/PythonCodeExporter";
+import { DebugLogViewer } from "./components/DebugLogViewer";
 import { ChatConsole } from "./components/ChatConsole";
 import { Heart, Layers, Terminal, Radio, Mic, MessageSquare } from "lucide-react";
 
@@ -113,7 +113,9 @@ const getInitialSTTConfig = (): STTConfig => {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"chat" | "scope" | "openwebui" | "voice" | "python-code">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "scope" | "openwebui" | "voice" | "debug-log">("chat");
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const handleDebugLog = (msg: string) => setDebugLogs(prev => [...prev, msg]);
 
   const [characterName] = useState("Aoi");
 
@@ -226,13 +228,13 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab("python-code")}
+              onClick={() => setActiveTab("debug-log")}
               className={`px-3 py-1.5 rounded-xl font-medium transition flex items-center gap-1.5 ${
-                activeTab === "python-code" ? "bg-violet-600 text-white shadow-lg shadow-violet-500/20" : "text-slate-400 hover:text-slate-200"
+                activeTab === "debug-log" ? "bg-violet-600 text-white shadow-lg shadow-violet-500/20" : "text-slate-400 hover:text-slate-200"
               }`}
             >
               <Terminal className="w-3.5 h-3.5" />
-              <span>Python Code</span>
+              <span>Debug Log</span>
             </button>
           </nav>
 
@@ -260,6 +262,7 @@ export default function App() {
         
         {activeTab === "chat" && (
           <ChatConsole
+            onDebugLog={handleDebugLog}
             openWebUIConfig={openWebUIConfig}
             ttsConfig={ttsConfig}
             sttConfig={sttConfig}
@@ -292,7 +295,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === "python-code" && <PythonCodeExporter />}
+        {activeTab === "debug-log" && <DebugLogViewer logs={debugLogs} />}
 
       </main>
 

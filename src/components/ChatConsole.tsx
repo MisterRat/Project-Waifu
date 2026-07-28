@@ -23,6 +23,7 @@ interface ChatConsoleProps {
   onTTSChange?: (config: TTSConfig) => void;
   onSTTChange?: (config: STTConfig) => void;
   onUpdateSystemPrompt?: (newPrompt: string) => void;
+  onDebugLog?: (msg: string) => void;
 }
 
 export const ChatConsole: React.FC<ChatConsoleProps> = ({
@@ -32,6 +33,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   onTTSChange,
   onSTTChange,
   onUpdateSystemPrompt,
+  onDebugLog,
 }) => {
   const [profiles, setProfiles] = useState<WaifuProfile[]>(loadWaifuProfiles);
   const [activeProfileId, setActiveProfileIdState] = useState<string>(getActiveWaifuId);
@@ -610,6 +612,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         {/* Live2D Avatar Area (5 cols) */}
         <div className="lg:col-span-5">
           <Live2DAvatar
+            onDebugLog={onDebugLog}
             emotion={currentEmotion}
             isSpeaking={isSpeaking}
             characterName={activeProfile.name}

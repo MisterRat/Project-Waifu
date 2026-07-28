@@ -26,6 +26,7 @@ interface Live2DAvatarProps {
   onModelUrlChange?: (newUrl: string) => void;
   onEmotionChange?: (emotion: EmotionType) => void;
   audioVolume?: number;
+  onDebugLog?: (msg: string) => void;
 }
 
 export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
@@ -36,6 +37,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   onModelUrlChange,
   onEmotionChange,
   audioVolume = 0,
+  onDebugLog,
 }) => {
   const pixiCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const proceduralCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -56,6 +58,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
   const [live2dStatus, setLive2dStatus] = useState<"idle" | "loading" | "active" | "error">("idle");
   const [live2dError, setLive2dError] = useState<string | null>(null);
+  const addDebugLog = (msg: string) => { if (onDebugLog) onDebugLog(msg); };
 
   useEffect(() => {
     if (modelUrl) {
@@ -132,6 +135,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     const loadPixiModel = async () => {
       setLive2dStatus("loading");
       setLive2dError(null);
+      console.log("Live2D Avatar: Started loading");
+          addDebugLog("Started loading");
 
       // Wait up to 5 seconds for PIXI & pixi-live2d-display to be ready on window
       let attempts = 0;
@@ -144,10 +149,14 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       }
 
       const PIXI = (window as any).PIXI;
+      console.log("Live2D Avatar: PIXI check result - PIXI:", !!PIXI, "Live2DModel:", !!PIXI?.live2d?.Live2DModel);
+          addDebugLog("PIXI check result - PIXI:" + !!PIXI + " Live2DModel:" + !!PIXI?.live2d?.Live2DModel);
       if (!PIXI || !PIXI.live2d?.Live2DModel) {
         if (isSubscribed) {
-          setLive2dStatus("idle");
-          setLive2dError(null);
+          console.log("Live2D Avatar: Aborting load because PIXI or Live2DModel is missing");
+          addDebugLog("Aborting load because PIXI or Live2DModel is missing");
+          setLive2dStatus("error");
+          setLive2dError("Failed to load PIXI.js or Live2D Model dependencies. Check browser console.");
         }
         return;
       }
@@ -189,29 +198,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         const width = containerRef.current.clientWidth || 480;
         const height = containerRef.current.clientHeight || 520;
 
-        // Fix for WebGL bindFramebuffer Argument 2 is not an object
-        const patchBindFramebuffer = (Context: any) => {
-          if (Context && Context.prototype && Context.prototype.bindFramebuffer) {
-            const origBindFramebuffer = Context.prototype.bindFramebuffer;
-            Context.prototype.bindFramebuffer = function(target: number, framebuffer: any) {
-              if (framebuffer === undefined) framebuffer = null;
-              return origBindFramebuffer.call(this, target, framebuffer);
-            };
-            Context.prototype.bindFramebuffer.__patched = true;
-          }
-        };
-        
-        if (!(WebGLRenderingContext.prototype.bindFramebuffer as any).__patched) {
-          patchBindFramebuffer(WebGLRenderingContext);
-          if (typeof WebGL2RenderingContext !== 'undefined') {
-            patchBindFramebuffer(WebGL2RenderingContext);
-          }
-        }
-
         if (PIXI.settings && PIXI.ENV && PIXI.ENV.WEBGL_LEGACY) {
           PIXI.settings.PREFER_ENV = PIXI.ENV.WEBGL_LEGACY;
         }
 
+        addDebugLog("Creating PIXI Application...");
         app = new PIXI.Application({
           view: pixiCanvasRef.current,
           autoStart: true,
@@ -226,11 +217,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             preserveDrawingBuffer: true,
           },
         });
-
-
         const { actualModelUrl, urlResolver } = await resolveLive2DModelUrl(customModelUrl);
 
         // Instantiate model from URL or Blob URL
+        addDebugLog("Loading model from URL: " + String(actualModelUrl).substring(0, 50));
         model = await PIXI.live2d.Live2DModel.from(actualModelUrl, {
           autoInteract: true,
         });
@@ -248,6 +238,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           return;
         }
 
+        addDebugLog("Model created, adding to stage...");
         app.stage.addChild(model);
 
         // Calculate responsive scale safely and center model
@@ -273,9 +264,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         }
       } catch (err: any) {
         console.error("Live2D WebGL model load failed:", err);
+          addDebugLog("Error: " + String(err));
         if (isSubscribed) {
           setLive2dStatus("error");
-          setLive2dError(err?.message || err?.toString() || "Unknown WebGL/Model Error");
+          setLive2dError(err?.stack ? (err.message + '\n' + err.stack) : (err?.message || String(err)));
         }
       }
     };
