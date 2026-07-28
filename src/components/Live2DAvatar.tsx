@@ -189,18 +189,28 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         const width = containerRef.current.clientWidth || 480;
         const height = containerRef.current.clientHeight || 520;
 
+        // Fix for WebGL bindFramebuffer Argument 2 is not an object
+        const patchBindFramebuffer = (Context: any) => {
+          if (Context && Context.prototype && Context.prototype.bindFramebuffer) {
+            const origBindFramebuffer = Context.prototype.bindFramebuffer;
+            Context.prototype.bindFramebuffer = function(target: number, framebuffer: any) {
+              if (framebuffer === undefined) framebuffer = null;
+              return origBindFramebuffer.call(this, target, framebuffer);
+            };
+            Context.prototype.bindFramebuffer.__patched = true;
+          }
+        };
+        
+        if (!(WebGLRenderingContext.prototype.bindFramebuffer as any).__patched) {
+          patchBindFramebuffer(WebGLRenderingContext);
+          if (typeof WebGL2RenderingContext !== 'undefined') {
+            patchBindFramebuffer(WebGL2RenderingContext);
+          }
+        }
+
         if (PIXI.settings && PIXI.ENV && PIXI.ENV.WEBGL_LEGACY) {
           PIXI.settings.PREFER_ENV = PIXI.ENV.WEBGL_LEGACY;
         }
-
-        // Force WebGL 1 to avoid WebGL2 bindFramebuffer bug in some pixi/live2d combinations
-        const origGetContext = HTMLCanvasElement.prototype.getContext;
-        HTMLCanvasElement.prototype.getContext = function (type: string, ...args: any[]) {
-          if (type === "webgl2" || type === "experimental-webgl2") {
-            return null;
-          }
-          return origGetContext.apply(this, [type, ...args]);
-        } as any;
 
         app = new PIXI.Application({
           view: pixiCanvasRef.current,
@@ -217,8 +227,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           },
         });
 
-        // Restore WebGL2 getContext
-        HTMLCanvasElement.prototype.getContext = origGetContext;
 
         const { actualModelUrl, urlResolver } = await resolveLive2DModelUrl(customModelUrl);
 
