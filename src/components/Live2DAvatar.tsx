@@ -189,6 +189,19 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         const width = containerRef.current.clientWidth || 480;
         const height = containerRef.current.clientHeight || 520;
 
+        if (PIXI.settings && PIXI.ENV && PIXI.ENV.WEBGL_LEGACY) {
+          PIXI.settings.PREFER_ENV = PIXI.ENV.WEBGL_LEGACY;
+        }
+
+        // Force WebGL 1 to avoid WebGL2 bindFramebuffer bug in some pixi/live2d combinations
+        const origGetContext = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (type: string, ...args: any[]) {
+          if (type === "webgl2" || type === "experimental-webgl2") {
+            return null;
+          }
+          return origGetContext.apply(this, [type, ...args]);
+        } as any;
+
         app = new PIXI.Application({
           view: pixiCanvasRef.current,
           autoStart: true,
@@ -203,6 +216,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             preserveDrawingBuffer: true,
           },
         });
+
+        // Restore WebGL2 getContext
+        HTMLCanvasElement.prototype.getContext = origGetContext;
 
         const { actualModelUrl, urlResolver } = await resolveLive2DModelUrl(customModelUrl);
 
