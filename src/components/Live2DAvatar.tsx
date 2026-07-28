@@ -206,10 +206,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         const { actualModelUrl, urlResolver } = await resolveLive2DModelUrl(customModelUrl);
 
-        // Instantiate model from URL or Blob URL with custom urlResolver
+        // Instantiate model from URL or Blob URL
         model = await PIXI.live2d.Live2DModel.from(actualModelUrl, {
           autoInteract: true,
-          urlResolver: urlResolver,
         });
 
         if (model && model.internalModel && model.internalModel.settings) {
@@ -249,10 +248,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           setLive2dStatus("active");
         }
       } catch (err: any) {
-        console.warn("Live2D WebGL model load notice (falling back to procedural canvas):", err);
+        console.error("Live2D WebGL model load failed:", err);
         if (isSubscribed) {
-          setLive2dStatus("idle");
-          setLive2dError(null);
+          setLive2dStatus("error");
+          setLive2dError(err?.message || err?.toString() || "Unknown WebGL/Model Error");
         }
       }
     };
@@ -637,6 +636,19 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           <div className="absolute top-3 left-3 text-[10px] text-emerald-300 bg-emerald-950/80 backdrop-blur px-2.5 py-1 rounded-lg border border-emerald-800/80 pointer-events-none opacity-90 font-mono flex items-center gap-1.5 z-20">
             <Check className="w-3 h-3 text-emerald-400" />
             <span>Live2D WebGL Model Active ({characterName})</span>
+          </div>
+        )}
+
+        {/* Live2D Error / Fallback Badge */}
+        {live2dStatus === "error" && (
+          <div className="absolute top-3 left-3 right-28 text-[10px] text-amber-300 bg-amber-950/90 backdrop-blur p-2 rounded-lg border border-amber-800/80 z-20 font-sans shadow-lg flex items-start gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <span className="font-bold block">Live2D WebGL Fallback Active</span>
+              <span className="text-[9.5px] text-amber-200/80 block leading-tight mt-0.5 max-h-24 overflow-y-auto">
+                {live2dError || "Showing 2D procedural avatar fallback."}
+              </span>
+            </div>
           </div>
         )}
 
