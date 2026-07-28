@@ -10,7 +10,7 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
     greetingMessage:
       "[happy] Konnichiwa! I am Aoi, your AI companion. I'm so excited to talk with you today! What shall we work on?",
     live2dModelUrl:
-      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t08.model3.json",
+      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t03.model3.json",
     ttsVoice: "en-US-AnaNeural",
     ttsPitch: 1.2,
     ttsRate: 1.0,
@@ -26,7 +26,7 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
     greetingMessage:
       "[blush] Hmph, don't misunderstand! I'm only here to verify your local OpenWebUI cluster... What research query do you have?",
     live2dModelUrl:
-      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/shizuku/shizuku.model3.json",
+      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/shizuku/shizuku.model.json",
     ttsVoice: "en-US-JennyNeural",
     ttsPitch: 1.0,
     ttsRate: 1.0,
@@ -42,7 +42,7 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
     greetingMessage:
       "[happy] Welcome back! Rem has been keeping your environment ready. How may Rem assist you today?",
     live2dModelUrl:
-      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t08.model3.json",
+      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t03.model3.json",
     ttsVoice: "en-US-AriaNeural",
     ttsPitch: 1.1,
     ttsRate: 0.95,
@@ -58,7 +58,7 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
     greetingMessage:
       "[thinking] Ah, hello... I was just reviewing python async handlers. It's lovely to spend time together.",
     live2dModelUrl:
-      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/shizuku/shizuku.model3.json",
+      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/shizuku/shizuku.model.json",
     ttsVoice: "en-US-MichelleNeural",
     ttsPitch: 1.05,
     ttsRate: 0.9,
@@ -67,7 +67,7 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
   },
 ];
 
-const PROFILES_STORAGE_KEY = "project_waifu_profiles_v1";
+const PROFILES_STORAGE_KEY = "project_waifu_profiles_v2";
 const ACTIVE_WAIFU_ID_KEY = "project_waifu_active_id";
 
 export function loadWaifuProfiles(): WaifuProfile[] {
