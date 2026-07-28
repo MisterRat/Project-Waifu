@@ -28,12 +28,32 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
 }) => {
   const activeProfile = profiles.find((p) => p.id === activeProfileId) || profiles[0];
 
+  interface ServerModelItem {
+    id: string;
+    name: string;
+    modelUrl: string;
+    createdAt: number;
+  }
+
   const [formData, setFormData] = useState<WaifuProfile>(activeProfile);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isExtractingZip, setIsExtractingZip] = useState(false);
   const [zipSuccessInfo, setZipSuccessInfo] = useState<string | null>(null);
   const [zipError, setZipError] = useState<string | null>(null);
+  const [serverModels, setServerModels] = useState<ServerModelItem[]>([]);
+
+  const fetchServerModels = async () => {
+    try {
+      const res = await fetch("/api/live2d/models");
+      if (res.ok) {
+        const data = await res.json();
+        setServerModels(data.models || []);
+      }
+    } catch (err) {
+      console.warn("Could not fetch server models:", err);
+    }
+  };
 
   useEffect(() => {
     if (activeProfile) {
@@ -42,9 +62,22 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
       setZipSuccessInfo(null);
       setZipError(null);
     }
-  }, [activeProfileId, profiles]);
+    if (isOpen) {
+      fetchServerModels();
+    }
+  }, [activeProfileId, profiles, isOpen]);
 
   if (!isOpen) return null;
+
+  const handleDeleteServerModel = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await fetch(`/api/live2d/models/${id}`, { method: "DELETE" });
+      await fetchServerModels();
+    } catch (err) {
+      console.error("Error deleting server model:", err);
+    }
+  };
 
   const handleZipFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -55,13 +88,43 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
     setZipSuccessInfo(null);
 
     try {
+      // 1. Convert file to Base64
+      const reader = new FileReader();
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // 2. Upload to server for disk storage in uploads/models/
+      const res = await fetch("/api/live2d/upload-zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, zipBase64: base64Data }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.modelUrl) {
+          setFormData((prev) => ({
+            ...prev,
+            live2dModelUrl: data.modelUrl,
+            name: isCreatingNew && prev.name === "Custom Companion" ? data.modelName : prev.name,
+          }));
+          setZipSuccessInfo(`Saved to server disk storage! (${data.fileCount} model files extracted)`);
+          await fetchServerModels();
+          return;
+        }
+      }
+
+      // 3. Fallback to client-side browser IndexedDB if server endpoint was unreachable
       const result = await loadLive2DFromZip(file, formData.id);
       setFormData((prev) => ({
         ...prev,
         live2dModelUrl: result.modelUrl,
         name: isCreatingNew && prev.name === "Custom Companion" ? result.modelName : prev.name,
       }));
-      setZipSuccessInfo(`Successfully unpacked "${file.name}" (${result.fileCount} model assets ready)`);
+      setZipSuccessInfo(`Unpacked into browser storage (${result.fileCount} model assets ready)`);
     } catch (err: any) {
       console.error("ZIP loading error:", err);
       setZipError(err.message || "Failed to unpack model ZIP file.");
@@ -334,8 +397,49 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
                 </div>
               )}
 
+              {/* Server Stored Models List */}
+              {serverModels.length > 0 && (
+                <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+                  <span className="text-[10px] font-semibold text-slate-400 block">
+                    Server-Stored Live2D Models ({serverModels.length}):
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+                    {serverModels.map((m) => {
+                      const isSelected = formData.live2dModelUrl === m.modelUrl;
+                      return (
+                        <div
+                          key={m.id}
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              live2dModelUrl: m.modelUrl,
+                              name: isCreatingNew && prev.name === "Custom Companion" ? m.name : prev.name,
+                            }))
+                          }
+                          className={`text-[10px] font-mono px-2.5 py-1 rounded-xl border cursor-pointer flex items-center gap-2 transition ${
+                            isSelected
+                              ? "bg-violet-600/30 border-violet-400 text-violet-200 font-bold shadow-sm shadow-violet-500/20"
+                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                          }`}
+                        >
+                          <span className="truncate max-w-[140px]">📁 {m.name}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteServerModel(m.id, e)}
+                            className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition"
+                            title="Delete model from server disk"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <span className="text-[10px] text-slate-500 block">
-                Supports direct web URLs or local <code className="text-violet-300">.zip</code> archives containing Live2D Cubism 3/4 model files (.model3.json, .moc3, textures, motions).
+                Supports direct web URLs or local <code className="text-violet-300">.zip</code> archives containing Live2D Cubism 3/4 model files (.model3.json, .moc3, textures, motions). Extracted files are stored locally on server disk.
               </span>
             </div>
 

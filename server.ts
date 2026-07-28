@@ -1,5 +1,7 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
+import JSZip from "jszip";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import { pipeline, env } from "@xenova/transformers";
@@ -41,6 +43,173 @@ async function startServer() {
   // Health check endpoint
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", message: "Project Waifu Server Running" });
+  });
+
+  // Local storage directory for extracted Live2D models
+  const MODELS_DIR = path.join(process.cwd(), "uploads", "models");
+  if (!fs.existsSync(MODELS_DIR)) {
+    fs.mkdirSync(MODELS_DIR, { recursive: true });
+  }
+
+  // Serve models directory statically with CORS headers and appropriate MIME types
+  app.use(
+    "/models",
+    express.static(MODELS_DIR, {
+      setHeaders: (res, filePath) => {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        if (filePath.endsWith(".moc") || filePath.endsWith(".moc3")) {
+          res.setHeader("Content-Type", "application/octet-stream");
+        } else if (filePath.endsWith(".model3.json") || filePath.endsWith(".model.json")) {
+          res.setHeader("Content-Type", "application/json");
+        }
+      },
+    })
+  );
+
+  // GET /api/live2d/models - List all server-stored Live2D models
+  app.get("/api/live2d/models", async (_req, res) => {
+    try {
+      if (!fs.existsSync(MODELS_DIR)) {
+        return res.json({ models: [] });
+      }
+      const folders = fs.readdirSync(MODELS_DIR).filter((f) => {
+        const full = path.join(MODELS_DIR, f);
+        return fs.statSync(full).isDirectory();
+      });
+
+      const result = [];
+      for (const folder of folders) {
+        const folderPath = path.join(MODELS_DIR, folder);
+        const findModelJson = (dir: string, baseDir: string): string | null => {
+          const entries = fs.readdirSync(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              const found = findModelJson(fullPath, baseDir);
+              if (found) return found;
+            } else if (entry.isFile()) {
+              const lower = entry.name.toLowerCase();
+              if (lower.endsWith(".model3.json") || lower.endsWith(".model.json")) {
+                return path.relative(baseDir, fullPath).replace(/\\/g, "/");
+              }
+            }
+          }
+          return null;
+        };
+
+        const relModelPath = findModelJson(folderPath, folderPath);
+        if (relModelPath) {
+          const filename = path.basename(relModelPath);
+          const name = filename.replace(/\.(model3|model)\.json$/i, "");
+          const stat = fs.statSync(folderPath);
+          result.push({
+            id: folder,
+            name,
+            modelUrl: `/models/${folder}/${relModelPath}`,
+            createdAt: stat.birthtimeMs || stat.ctimeMs,
+          });
+        }
+      }
+
+      return res.json({ models: result });
+    } catch (err: any) {
+      console.error("Error listing Live2D models:", err);
+      return res.status(500).json({ error: "Failed to list Live2D models", details: err.message });
+    }
+  });
+
+  // POST /api/live2d/upload-zip - Unpack & store Live2D zip archive directly on server disk
+  app.post("/api/live2d/upload-zip", async (req, res) => {
+    try {
+      const { filename, zipBase64 } = req.body;
+      if (!zipBase64) {
+        return res.status(400).json({ error: "Missing zipBase64 data in request body" });
+      }
+
+      const cleanBase64 = zipBase64.replace(/^data:.*?;base64,/, "");
+      const buffer = Buffer.from(cleanBase64, "base64");
+
+      const zip = await JSZip.loadAsync(buffer);
+
+      const modelId = `model_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const modelFolderPath = path.join(MODELS_DIR, modelId);
+      fs.mkdirSync(modelFolderPath, { recursive: true });
+
+      let modelJsonPath: string | null = null;
+      let fileCount = 0;
+
+      const zipKeys = Object.keys(zip.files);
+      for (const key of zipKeys) {
+        const entry = zip.files[key];
+        if (entry.dir) continue;
+        const lower = key.toLowerCase();
+        if (lower.endsWith(".model3.json") || lower.endsWith(".model.json")) {
+          if (!modelJsonPath || lower.endsWith(".model3.json")) {
+            modelJsonPath = key;
+          }
+        }
+      }
+
+      if (!modelJsonPath) {
+        fs.rmSync(modelFolderPath, { recursive: true, force: true });
+        return res.status(400).json({
+          error: "No valid .model3.json or .model.json file found in the uploaded ZIP archive.",
+        });
+      }
+
+      for (const key of zipKeys) {
+        const entry = zip.files[key];
+        if (entry.dir) continue;
+
+        const outPath = path.join(modelFolderPath, key);
+        const parentDir = path.dirname(outPath);
+        if (!fs.existsSync(parentDir)) {
+          fs.mkdirSync(parentDir, { recursive: true });
+        }
+
+        const contentBuffer = await entry.async("nodebuffer");
+        fs.writeFileSync(outPath, contentBuffer);
+        fileCount++;
+      }
+
+      const relModelPath = modelJsonPath.replace(/\\/g, "/");
+      const modelFilename = path.basename(relModelPath);
+      const modelName = modelFilename.replace(/\.(model3|model)\.json$/i, "");
+      const modelUrl = `/models/${modelId}/${relModelPath}`;
+
+      console.log(`[Project Waifu] Live2D Zip extracted successfully to ${modelFolderPath} -> ${modelUrl}`);
+      return res.json({
+        success: true,
+        modelId,
+        modelName,
+        modelUrl,
+        fileCount,
+      });
+    } catch (err: any) {
+      console.error("Error extracting Live2D zip on server:", err);
+      return res.status(500).json({
+        error: "Failed to extract and save Live2D ZIP file on server",
+        details: err.message,
+      });
+    }
+  });
+
+  // DELETE /api/live2d/models/:id - Remove a server-stored model folder
+  app.delete("/api/live2d/models/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!id || id.includes("..") || id.includes("/") || id.includes("\\")) {
+        return res.status(400).json({ error: "Invalid model ID" });
+      }
+      const targetPath = path.join(MODELS_DIR, id);
+      if (fs.existsSync(targetPath)) {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+      }
+      return res.json({ success: true, message: `Model ${id} deleted` });
+    } catch (err: any) {
+      console.error("Error deleting Live2D model:", err);
+      return res.status(500).json({ error: "Failed to delete model", details: err.message });
+    }
   });
 
   // OpenWebUI / OpenAI API Proxy Endpoint to handle CORS
