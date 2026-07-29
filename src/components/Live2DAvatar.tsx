@@ -56,7 +56,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const [zipSuccessMsg, setZipSuccessMsg] = useState<string | null>(null);
   const [zipErrorMsg, setZipErrorMsg] = useState<string | null>(null);
 
-  const [live2dStatus, setLive2dStatus] = useState<"idle" | "loading" | "active" | "error">("idle");
+  const [live2dStatus, setLive2dStatus] = useState<"idle" | "loading" | "active" | "error" | "fallback">("idle");
   const [live2dError, setLive2dError] = useState<string | null>(null);
   const addDebugLog = (msg: string) => { if (onDebugLog) onDebugLog(msg); };
 
@@ -264,11 +264,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           setLive2dStatus("active");
         }
       } catch (err: any) {
-        console.error("Live2D WebGL model load failed:", err);
-          addDebugLog("Error: " + String(err));
+        console.warn("Live2D WebGL model load fallback to procedural canvas:", err);
+        addDebugLog("WebGL/Network Fallback: " + String(err?.message || err));
         if (isSubscribed) {
-          setLive2dStatus("error");
-          setLive2dError(err?.stack ? (err.message + '\n' + err.stack) : (err?.message || String(err)));
+          setLive2dStatus("fallback");
+          setLive2dError(null);
         }
       }
     };
