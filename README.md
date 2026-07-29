@@ -2,6 +2,8 @@
 
 An interactive, customizable Web-based AI Companion application featuring **Live2D animated avatars**, **real-time chat with LLMs** (OpenAI compatible), **TTS voice synthesis and STT**, and full **Persona & Model customization**.
 
+![Interactive Live2D AI Companion](assets/pwscreenshot.jpg)
+
 ---
 
 ## 🚀 How to Deploy with Portainer (From GitHub)
