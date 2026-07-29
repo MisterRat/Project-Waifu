@@ -60,7 +60,78 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const zoomStartRef = useRef({ y: 0, scale: 1 });
   const [zoomLevel, setZoomLevel] = useState<number>(1);
 
+  const [pos, setPos] = useState(() => {
+    try {
+      const saved = localStorage.getItem("waifu_avatar_pos");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { x: 0, y: 0 };
+  });
+
+  const [size, setSize] = useState<{ width: string; height: string }>(() => {
+    try {
+      const saved = localStorage.getItem("waifu_avatar_size");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { width: "", height: "" };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("waifu_avatar_pos", JSON.stringify(pos));
+    } catch (e) {}
+  }, [pos]);
+
+  const handleResizeSave = () => {
+    const el = containerRef.current;
+    if (el) {
+      const newSize = { width: `${el.offsetWidth}px`, height: `${el.offsetHeight}px` };
+      setSize(newSize);
+      try {
+        localStorage.setItem("waifu_avatar_size", JSON.stringify(newSize));
+      } catch (e) {}
+    }
+  };
+
+  const [isDraggingWindow, setIsDraggingWindow] = useState(false);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const dragRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
+
+  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    setIsDraggingWindow(true);
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: pos.x,
+      initialY: pos.y,
+    };
+    e.stopPropagation();
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingWindow) return;
+      const dx = e.clientX - dragRef.current.startX;
+      const dy = e.clientY - dragRef.current.startY;
+      setPos({
+        x: dragRef.current.initialX + dx,
+        y: dragRef.current.initialY + dy,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingWindow(false);
+    };
+
+    if (isDraggingWindow) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDraggingWindow]);
   const [mouthOpenRatio, setMouthOpenRatio] = useState(0);
   const [outfitColor, setOutfitColor] = useState<"pink" | "blue" | "purple" | "emerald">("pink");
   const [showCustomModelModal, setShowCustomModelModal] = useState(false);
@@ -669,9 +740,24 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   ];
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col relative shadow-2xl">
+    <div
+      ref={containerRef}
+      onMouseUp={handleResizeSave}
+      style={{
+        transform: `translate(${pos.x}px, ${pos.y}px)`,
+        position: "relative",
+        zIndex: isDraggingWindow ? 30 : 10,
+        width: size.width || undefined,
+        height: size.height || undefined,
+      }}
+      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-2xl resize overflow-auto min-w-[300px] min-h-[400px]"
+    >
       {/* Top Header Bar */}
-      <div className="bg-slate-950/80 border-b border-slate-800 px-4 py-3 flex items-center justify-between backdrop-blur z-10">
+      <div
+        onMouseDown={handleHeaderMouseDown}
+        className="bg-slate-950/95 border-b border-slate-800 px-4 py-3 flex items-center justify-between backdrop-blur z-10 cursor-move select-none"
+        title="Drag to move window"
+      >
         <div className="flex items-center gap-2">
           <span
             className={`w-2.5 h-2.5 rounded-full ${
@@ -702,7 +788,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
-        className="relative w-full h-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group"
+        className="relative w-full h-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group flex-1"
       >
         {/* Canvas for WebGL Live2D Model */}
         <canvas
@@ -769,50 +855,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             <span>Speaking (Lip Sync: {Math.round(mouthOpenRatio * 100)}%)</span>
           </div>
         )}
-      </div>
-
-      {/* Emotion & Swatch Bar */}
-      <div className="p-3 bg-slate-950/90 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {emotionList.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => onEmotionChange && onEmotionChange(item.id)}
-              className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 transition ${
-                emotion === item.id
-                  ? item.color + " ring-1 ring-pink-500/50 shadow"
-                  : "bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-800"
-              }`}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Color Swatches */}
-        <div className="flex items-center gap-1 pl-2 border-l border-slate-800">
-          {(["pink", "blue", "purple", "emerald"] as const).map((color) => (
-            <button
-              key={color}
-              onClick={() => setOutfitColor(color)}
-              className={`w-4 h-4 rounded-full border transition ${
-                outfitColor === color
-                  ? "scale-125 border-white ring-1 ring-pink-400"
-                  : "border-transparent opacity-60 hover:opacity-100"
-              } ${
-                color === "pink"
-                  ? "bg-pink-400"
-                  : color === "blue"
-                  ? "bg-blue-400"
-                  : color === "purple"
-                  ? "bg-purple-400"
-                  : "bg-emerald-400"
-              }`}
-              title={`Change color theme to ${color}`}
-            />
-          ))}
-        </div>
       </div>
 
       {/* Model Selection Modal */}

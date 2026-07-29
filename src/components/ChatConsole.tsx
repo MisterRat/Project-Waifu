@@ -53,6 +53,80 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   const [isListening, setIsListening] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
+  const [chatPos, setChatPos] = useState(() => {
+    try {
+      const saved = localStorage.getItem("waifu_chat_pos");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { x: 0, y: 0 };
+  });
+
+  const [chatSize, setChatSize] = useState<{ width: string; height: string }>(() => {
+    try {
+      const saved = localStorage.getItem("waifu_chat_size");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { width: "", height: "" };
+  });
+
+  const chatContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("waifu_chat_pos", JSON.stringify(chatPos));
+    } catch (e) {}
+  }, [chatPos]);
+
+  const handleChatResizeSave = () => {
+    const el = chatContainerRef.current;
+    if (el) {
+      const newSize = { width: `${el.offsetWidth}px`, height: `${el.offsetHeight}px` };
+      setChatSize(newSize);
+      try {
+        localStorage.setItem("waifu_chat_size", JSON.stringify(newSize));
+      } catch (e) {}
+    }
+  };
+
+  const [isDraggingChat, setIsDraggingChat] = useState(false);
+  const chatDragRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
+
+  const handleChatHeaderMouseDown = (e: React.MouseEvent) => {
+    setIsDraggingChat(true);
+    chatDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: chatPos.x,
+      initialY: chatPos.y,
+    };
+    e.stopPropagation();
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingChat) return;
+      const dx = e.clientX - chatDragRef.current.startX;
+      const dy = e.clientY - chatDragRef.current.startY;
+      setChatPos({
+        x: chatDragRef.current.initialX + dx,
+        y: chatDragRef.current.initialY + dy,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingChat(false);
+    };
+
+    if (isDraggingChat) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDraggingChat]);
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -641,10 +715,25 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         </div>
 
         {/* Chat Console Area (7 cols) */}
-        <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col h-[520px]">
+        <div
+          ref={chatContainerRef}
+          onMouseUp={handleChatResizeSave}
+          style={{
+            transform: `translate(${chatPos.x}px, ${chatPos.y}px)`,
+            position: "relative",
+            zIndex: isDraggingChat ? 30 : 10,
+            width: chatSize.width || undefined,
+            height: chatSize.height || undefined,
+          }}
+          className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col h-[520px] resize overflow-auto min-w-[320px] min-h-[400px]"
+        >
           
           {/* Console Header */}
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+          <div
+            onMouseDown={handleChatHeaderMouseDown}
+            className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4 cursor-move select-none"
+            title="Drag to move conversation window"
+          >
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
               <h3 className="font-bold text-sm text-slate-100 font-serif italic">
