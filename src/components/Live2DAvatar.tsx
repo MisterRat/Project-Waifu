@@ -165,7 +165,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       if (PIXI.settings) {
         PIXI.settings.FAIL_IF_MAJOR_PERFORMANCE_CAVEAT = false;
       }
-      if (PIXI.utils) {
+      if (PIXI.utils && !(PIXI.utils as any).__isPatchedForMaxIfs) {
         const origCheck = PIXI.utils.checkMaxIfStatementsInShader;
         PIXI.utils.checkMaxIfStatementsInShader = function (maxIfs: number, gl: any) {
           if (!maxIfs || maxIfs <= 0) {
@@ -181,6 +181,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
           return maxIfs;
         };
+        (PIXI.utils as any).__isPatchedForMaxIfs = true;
       }
 
       // Register Ticker with Live2DModel so animations and WebGL updates run
@@ -234,7 +235,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         if (!isSubscribed) {
           model.destroy();
-          app.destroy();
+          app.destroy(false, { children: true });
           return;
         }
 
@@ -283,7 +284,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       }
       if (app) {
         try {
-          app.destroy();
+          app.destroy(false, { children: true });
         } catch (e) {}
       }
       live2dModelRef.current = null;

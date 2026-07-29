@@ -612,6 +612,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         {/* Live2D Avatar Area (5 cols) */}
         <div className="lg:col-span-5">
           <Live2DAvatar
+            key={activeProfile.id + activeProfile.live2dModelUrl}
             onDebugLog={onDebugLog}
             emotion={currentEmotion}
             isSpeaking={isSpeaking}
