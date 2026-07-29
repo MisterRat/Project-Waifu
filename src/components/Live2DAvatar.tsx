@@ -27,6 +27,10 @@ interface Live2DAvatarProps {
   onEmotionChange?: (emotion: EmotionType) => void;
   audioVolume?: number;
   onDebugLog?: (msg: string) => void;
+  initialScale?: number;
+  initialX?: number;
+  initialY?: number;
+  onTransformChange?: (scale: number, x: number, y: number) => void;
 }
 
 export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
@@ -38,6 +42,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   onEmotionChange,
   audioVolume = 0,
   onDebugLog,
+  initialScale,
+  initialX,
+  initialY,
+  onTransformChange,
 }) => {
   const pixiCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const proceduralCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -150,12 +158,14 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       const dy = e.clientY - dragStartRef.current.y;
       live2dModelRef.current.x = dragStartRef.current.modelX + dx;
       live2dModelRef.current.y = dragStartRef.current.modelY + dy;
+      onTransformChange?.(live2dModelRef.current.scale.x, live2dModelRef.current.x, live2dModelRef.current.y);
     } else if (isZoomingRef.current && live2dModelRef.current) {
       const dy = zoomStartRef.current.y - e.clientY;
       const scaleFactor = Math.pow(1.01, dy);
       const newScale = Math.max(0.05, Math.min(10.0, zoomStartRef.current.scale * scaleFactor));
       live2dModelRef.current.scale.set(newScale);
       setZoomLevel(newScale);
+      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
     }
   };
 
@@ -172,6 +182,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     const newScale = Math.max(0.05, Math.min(10.0, currentScale * scaleFactor));
     live2dModelRef.current.scale.set(newScale);
     setZoomLevel(newScale);
+    onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
   };
 
   // Live2D PixiJS WebGL Model Mount Engine
@@ -303,12 +314,14 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           fitScale = 0.25;
         }
 
-        model.scale.set(fitScale);
-        model.x = width / 2;
-        model.y = height / 2 + 15;
-        if (model.anchor && typeof model.anchor.set === "function") {
-          model.anchor.set(0.5, 0.5);
-        }
+        const finalScale = (initialScale !== undefined && !isNaN(initialScale) && initialScale > 0) ? initialScale : fitScale;
+        const finalX = (initialX !== undefined && !isNaN(initialX)) ? initialX : (width / 2);
+        const finalY = (initialY !== undefined && !isNaN(initialY)) ? initialY : (height / 2 + 15);
+
+        model.scale.set(finalScale);
+        model.x = finalX;
+        model.y = finalY;
+        setZoomLevel(finalScale);
 
         live2dModelRef.current = model;
         pixiAppRef.current = app;
@@ -355,11 +368,13 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         try {
           // Lip sync mouth opening
           if (typeof core.setParameterValueById === "function") {
+            const effectiveX = isSpeaking ? 0 : mousePos.x;
+            const effectiveY = isSpeaking ? 0 : mousePos.y;
             core.setParameterValueById("ParamMouthOpenY", mouthOpenRatio);
-            core.setParameterValueById("ParamAngleX", mousePos.x * 25);
-            core.setParameterValueById("ParamAngleY", -mousePos.y * 20);
-            core.setParameterValueById("ParamEyeBallX", mousePos.x);
-            core.setParameterValueById("ParamEyeBallY", -mousePos.y);
+            core.setParameterValueById("ParamAngleX", effectiveX * 25);
+            core.setParameterValueById("ParamAngleY", -effectiveY * 20);
+            core.setParameterValueById("ParamEyeBallX", effectiveX);
+            core.setParameterValueById("ParamEyeBallY", -effectiveY);
 
             if (emotion === "sad") {
               core.setParameterValueById("ParamBrowLY", -0.5);
@@ -374,7 +389,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         }
       }
     }
-  }, [mouthOpenRatio, mousePos, emotion, live2dStatus]);
+  }, [mouthOpenRatio, mousePos, emotion, live2dStatus, isSpeaking]);
 
   // Procedural 2D Anime Avatar Canvas fallback driver
   useEffect(() => {
@@ -404,8 +419,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       const centerX = width / 2;
       const centerY = height / 2 + 30;
 
-      const angleX = mousePos.x * 18;
-      const angleY = mousePos.y * 12;
+      const effectiveX = isSpeaking ? 0 : mousePos.x;
+      const effectiveY = isSpeaking ? 0 : mousePos.y;
+
+      const angleX = effectiveX * 18;
+      const angleY = effectiveY * 12;
 
       ctx.save();
       ctx.translate(centerX, centerY + breathOffset);
@@ -609,7 +627,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     render();
 
     return () => cancelAnimationFrame(animFrameId);
-  }, [mousePos, mouthOpenRatio, emotion, outfitColor, live2dStatus]);
+  }, [mousePos, mouthOpenRatio, emotion, outfitColor, live2dStatus, isSpeaking]);
 
   const emotionList: { id: EmotionType; label: string; icon: React.ReactNode; color: string }[] = [
     {

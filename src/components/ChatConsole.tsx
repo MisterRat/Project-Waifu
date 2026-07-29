@@ -618,6 +618,17 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
             isSpeaking={isSpeaking}
             characterName={activeProfile.name}
             modelUrl={activeProfile.live2dModelUrl}
+            initialScale={activeProfile.live2dScale}
+            initialX={activeProfile.live2dX}
+            initialY={activeProfile.live2dY}
+            onTransformChange={(scale, x, y) => {
+              handleSaveProfile({
+                ...activeProfile,
+                live2dScale: scale,
+                live2dX: x,
+                live2dY: y,
+              });
+            }}
             onModelUrlChange={(newUrl) => {
               handleSaveProfile({
                 ...activeProfile,

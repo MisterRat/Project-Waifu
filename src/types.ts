@@ -68,6 +68,9 @@ export interface WaifuProfile {
   themeColor: "violet" | "pink" | "blue" | "emerald" | "amber";
   isCustom?: boolean;
   avatarIcon?: string;
+  live2dScale?: number;
+  live2dX?: number;
+  live2dY?: number;
 }
 
 export interface WaifuSettings {

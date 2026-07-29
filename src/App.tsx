@@ -5,12 +5,11 @@
 
 import React, { useState, useEffect } from "react";
 import { OpenWebUIConfig, TTSConfig, STTConfig } from "./types";
-import { ScopeViewer } from "./components/ScopeViewer";
 import { OpenWebUITester } from "./components/OpenWebUITester";
 import { VoicePipelineTester } from "./components/VoicePipelineTester";
 import { DebugLogViewer } from "./components/DebugLogViewer";
 import { ChatConsole } from "./components/ChatConsole";
-import { Heart, Layers, Terminal, Radio, Mic, MessageSquare } from "lucide-react";
+import { Heart, Terminal, Radio, Mic, MessageSquare } from "lucide-react";
 
 const DEFAULT_OPENWEBUI_CONFIG: OpenWebUIConfig = {
   enabled: true,
@@ -113,7 +112,7 @@ const getInitialSTTConfig = (): STTConfig => {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"chat" | "scope" | "openwebui" | "voice" | "debug-log">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "openwebui" | "voice" | "debug-log">("chat");
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const handleDebugLog = (msg: string) => setDebugLogs(prev => [...prev, msg]);
 
@@ -197,15 +196,7 @@ export default function App() {
               <span>Live Companion</span>
             </button>
 
-            <button
-              onClick={() => setActiveTab("scope")}
-              className={`px-3 py-1.5 rounded-xl font-medium transition flex items-center gap-1.5 ${
-                activeTab === "scope" ? "bg-violet-600 text-white shadow-lg shadow-violet-500/20" : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>Project Scope</span>
-            </button>
+
 
             <button
               onClick={() => setActiveTab("openwebui")}
@@ -273,8 +264,6 @@ export default function App() {
             }}
           />
         )}
-
-        {activeTab === "scope" && <ScopeViewer />}
 
         {activeTab === "openwebui" && (
           <OpenWebUITester
