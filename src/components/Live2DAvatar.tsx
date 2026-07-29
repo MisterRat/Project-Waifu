@@ -46,6 +46,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const pixiAppRef = useRef<any>(null);
   const live2dModelRef = useRef<any>(null);
 
+  const isPanningRef = useRef(false);
+  const isZoomingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0, modelX: 0, modelY: 0 });
+  const zoomStartRef = useRef({ y: 0, scale: 1 });
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [mouthOpenRatio, setMouthOpenRatio] = useState(0);
   const [outfitColor, setOutfitColor] = useState<"pink" | "blue" | "purple" | "emerald">("pink");
@@ -113,12 +119,59 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     return () => cancelAnimationFrame(animId);
   }, [isSpeaking, audioVolume]);
 
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button === 0) {
+      isPanningRef.current = true;
+      dragStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        modelX: live2dModelRef.current?.x || 0,
+        modelY: live2dModelRef.current?.y || 0,
+      };
+    } else if (e.button === 1) {
+      e.preventDefault();
+      isZoomingRef.current = true;
+      zoomStartRef.current = {
+        y: e.clientY,
+        scale: live2dModelRef.current?.scale.x || 1,
+      };
+    }
+  };
+
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const y = ((e.clientY - rect.top) / rect.height) * 2 - 1;
     setMousePos({ x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) });
+
+    if (isPanningRef.current && live2dModelRef.current) {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      live2dModelRef.current.x = dragStartRef.current.modelX + dx;
+      live2dModelRef.current.y = dragStartRef.current.modelY + dy;
+    } else if (isZoomingRef.current && live2dModelRef.current) {
+      const dy = zoomStartRef.current.y - e.clientY;
+      const scaleFactor = Math.pow(1.01, dy);
+      const newScale = Math.max(0.05, Math.min(10.0, zoomStartRef.current.scale * scaleFactor));
+      live2dModelRef.current.scale.set(newScale);
+      setZoomLevel(newScale);
+    }
+  };
+
+  const handleMouseUp = () => {
+    isPanningRef.current = false;
+    isZoomingRef.current = false;
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!live2dModelRef.current) return;
+    const currentScale = live2dModelRef.current.scale.x;
+    const scaleFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    const newScale = Math.max(0.05, Math.min(10.0, currentScale * scaleFactor));
+    live2dModelRef.current.scale.set(newScale);
+    setZoomLevel(newScale);
   };
 
   // Live2D PixiJS WebGL Model Mount Engine
@@ -626,8 +679,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       {/* Interactive Display Area */}
       <div
         ref={containerRef}
+        onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
-        className="relative w-full h-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-crosshair overflow-hidden group"
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
+        className="relative w-full h-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group"
       >
         {/* Canvas for WebGL Live2D Model */}
         <canvas
