@@ -341,7 +341,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
           baseUrl: ttsConfig.openaiBaseUrl || "http://localhost:8000/v1",
           apiKey: ttsConfig.openaiApiKey || "",
           model: ttsConfig.openaiModel || "kokoro",
-          voice: ttsConfig.openaiVoice || activeProfile.ttsVoice || "af_bella(.1)+zf_xiaoni(.9)",
+          voice: activeProfile.ttsVoice || ttsConfig.openaiVoice || "af_bella(.1)+zf_xiaoni(.9)",
           speed: activeProfile.ttsRate || ttsConfig.rate || 1.0,
         });
 
