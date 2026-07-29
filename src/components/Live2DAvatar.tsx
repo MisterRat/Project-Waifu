@@ -928,7 +928,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
                 type="text"
                 value={customModelUrl}
                 onChange={(e) => setCustomModelUrl(e.target.value)}
-                placeholder="https://cdn.example.com/models/shizuku/shizuku.model.json"
+                placeholder="https://domain.com/models/custom.model3.json"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-violet-500 font-mono"
               />
             </div>

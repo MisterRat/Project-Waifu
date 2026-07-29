@@ -345,7 +345,7 @@ npm run dev
 Access the live companion at \`http://localhost:3000\`.
 
 ## 💖 Multi-Waifu & Local Persistence Features
-- **Multi-Waifu Manager**: Switch between Aoi, Kurisu, Rem, Shizuku, or create custom personas.
+- **Multi-Waifu Manager**: Switch between default or custom personas.
 - **Per-Waifu Storage**: Personality prompt, greeting, Live2D avatar model URL, voice parameters, and chat history are saved per Waifu in \`localStorage\`.
 - **OpenWebUI Bridge**: Communicates directly with local LLMs (Llama 3, Mistral, Gemma) running in OpenWebUI or Ollama.
 - **Lip Sync & Voice Synthesis**: Neural TTS stream paired with animated mouth openness canvas rendering.

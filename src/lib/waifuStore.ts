@@ -9,29 +9,12 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
       "You are Aoi, a cheerful and affectionate anime AI companion (Waifu). You love chatting about technology, anime, and day-to-day life. Keep responses brief (1-3 sentences) and start with an emotion tag in brackets like [happy], [blush], [excited], [sad], [thinking].",
     greetingMessage:
       "[happy] Konnichiwa! I am Aoi, your AI companion. I'm so excited to talk with you today! What shall we work on?",
-    live2dModelUrl:
-      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t03.model3.json",
+    live2dModelUrl: "",
     ttsVoice: "en-US-AnaNeural",
     ttsPitch: 1.2,
     ttsRate: 1.0,
     themeColor: "violet",
     avatarIcon: "✨",
-  },
-  {
-    id: "shizuku",
-    name: "Shizuku",
-    tagline: "Gentle Bookworm & Code Architect",
-    personalityPrompt:
-      "You are Shizuku, a quiet, highly intelligent bookworm AI companion. You love literature, python coding, and peaceful conversations. Keep responses concise (1-3 sentences) and start with an emotion tag in brackets like [thinking], [happy], [surprised].",
-    greetingMessage:
-      "[thinking] Ah, hello... I was just reviewing python async handlers. It's lovely to spend time together.",
-    live2dModelUrl:
-      "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/shizuku/shizuku.model.json",
-    ttsVoice: "en-US-MichelleNeural",
-    ttsPitch: 1.05,
-    ttsRate: 0.9,
-    themeColor: "emerald",
-    avatarIcon: "📚",
   },
 ];
 
@@ -44,7 +27,17 @@ export function loadWaifuProfiles(): WaifuProfile[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        const cleaned = parsed
+          .filter((p: WaifuProfile) => p.id !== "shizuku")
+          .map((p: WaifuProfile) => {
+            if (p.id === "aoi" && p.live2dModelUrl?.includes("haru_greeter_t03")) {
+              return { ...p, live2dModelUrl: "" };
+            }
+            return p;
+          });
+        if (cleaned.length > 0) {
+          return cleaned;
+        }
       }
     }
   } catch (e) {
@@ -64,7 +57,7 @@ export function saveWaifuProfiles(profiles: WaifuProfile[]): void {
 export function getActiveWaifuId(): string {
   try {
     const id = localStorage.getItem(ACTIVE_WAIFU_ID_KEY);
-    if (id) return id;
+    if (id && id !== "shizuku") return id;
   } catch (e) {
     console.warn("Failed to read active waifu id", e);
   }

@@ -143,7 +143,7 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
       personalityPrompt:
         "You are a loving anime AI companion. Keep answers short (1-3 sentences) and use emotion tags like [happy], [blush], [excited].",
       greetingMessage: "[happy] Hello master! I'm your custom AI companion. How are you feeling today?",
-      live2dModelUrl: "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t03.model3.json",
+      live2dModelUrl: "",
       ttsVoice: "en-US-AnaNeural",
       ttsPitch: 1.2,
       ttsRate: 1.0,
@@ -298,7 +298,7 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g. Shizuku"
+                  placeholder="e.g. Aoi"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-violet-500/50"
                 />
               </div>
