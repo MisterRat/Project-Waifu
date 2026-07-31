@@ -112,10 +112,10 @@ export const OpenWebUITester: React.FC<OpenWebUITesterProps> = ({ config, onChan
         <div>
           <div className="flex items-center gap-2">
             <Radio className="w-4 h-4 text-violet-400 animate-pulse" />
-            <h3 className="font-bold text-base text-slate-100 font-serif italic">OpenWebUI API Configuration & Persistence</h3>
+            <h3 className="font-bold text-base text-slate-100 font-serif italic">OpenAI API (OpenWebUI / Ollama) Configuration & Persistence</h3>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Configure local or remote OpenWebUI endpoint. Settings are saved automatically to browser storage.
+            Configure any local or remote OpenAI-compatible API endpoint (OpenWebUI, Ollama, LM Studio, or OpenAI). Settings are saved automatically to browser storage.
           </p>
         </div>
 
@@ -124,12 +124,12 @@ export const OpenWebUITester: React.FC<OpenWebUITesterProps> = ({ config, onChan
           {isConfigValid ? (
             <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 font-mono">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              OpenWebUI Active (Gemini Bypass)
+              OpenAI / OpenWebUI Active (Gemini Bypass)
             </span>
           ) : (
             <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 font-mono">
               <AlertCircle className="w-4 h-4 text-amber-400" />
-              Gemini Fallback (OpenWebUI Unconfigured)
+              Gemini Fallback (OpenAI / OpenWebUI Unconfigured)
             </span>
           )}
 
@@ -155,7 +155,7 @@ export const OpenWebUITester: React.FC<OpenWebUITesterProps> = ({ config, onChan
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
             <Server className="w-3.5 h-3.5 text-violet-400" />
-            Base OpenWebUI Server URL
+            Base OpenAI / OpenWebUI Server URL
           </label>
           <input
             type="text"
@@ -258,10 +258,10 @@ export const OpenWebUITester: React.FC<OpenWebUITesterProps> = ({ config, onChan
       <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 text-xs text-slate-400 space-y-1">
         <div className="font-semibold text-slate-300 flex items-center gap-1.5">
           <ShieldCheck className="w-4 h-4 text-violet-400" />
-          <span>Strict OpenWebUI Priority Enforcement</span>
+          <span>Strict OpenAI-Compatible API Priority Enforcement</span>
         </div>
         <p className="text-[11px] text-slate-400 leading-relaxed">
-          When valid OpenWebUI settings are present (Base URL & Model defined) and enabled, Project Waifu exclusively routes all live companion prompts through OpenWebUI and strictly avoids invoking Gemini directly.
+          When valid OpenAI / OpenWebUI settings are present (Base URL & Model defined) and enabled, Project Waifu exclusively routes all live companion prompts through your OpenAI-compatible endpoint (OpenWebUI, Ollama, OpenAI) and strictly avoids invoking Gemini directly.
         </p>
       </div>
 

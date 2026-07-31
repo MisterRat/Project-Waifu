@@ -205,7 +205,7 @@ export default function App() {
               }`}
             >
               <Radio className="w-3.5 h-3.5" />
-              <span>OpenWebUI API</span>
+              <span>OpenAI API (OpenWebUI)</span>
             </button>
 
             <button
@@ -234,7 +234,7 @@ export default function App() {
             <div className="flex items-center space-x-2">
               <div className={`w-2 h-2 rounded-full ${isOpenWebUIValid ? "bg-emerald-500" : "bg-amber-500"}`}></div>
               <span className="text-xs text-slate-400 font-mono">
-                API: {isOpenWebUIValid ? `OPENWEBUI (${openWebUIConfig.model})` : "GEMINI DIRECT"}
+                API: {isOpenWebUIValid ? `OPENAI / OPENWEBUI (${openWebUIConfig.model})` : "GEMINI DIRECT"}
               </span>
             </div>
             <div className="flex items-center space-x-2">

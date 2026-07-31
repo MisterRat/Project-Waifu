@@ -607,16 +607,16 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
 
           const data = await res.json();
           if (!res.ok) {
-            throw new Error(data.error || `OpenWebUI API returned status ${res.status}`);
+            throw new Error(data.error || `OpenAI / OpenWebUI API returned status ${res.status}`);
           }
 
           replyContent = data.choices?.[0]?.message?.content || "";
           if (!replyContent) {
-            replyContent = "[OpenWebUI Error] Model returned empty content.";
+            replyContent = "[OpenAI API Error] Model returned empty content.";
           }
         } catch (e: any) {
-          console.error("OpenWebUI chat error:", e);
-          replyContent = `[OpenWebUI Error] ${e.message || "Failed to communicate with OpenWebUI server"}. (Note: Gemini API fallback is disabled because OpenWebUI is configured as your active LLM provider).`;
+          console.error("OpenAI / OpenWebUI chat error:", e);
+          replyContent = `[OpenAI API Error] ${e.message || "Failed to communicate with OpenAI / OpenWebUI server"}. (Note: Gemini API fallback is disabled because an OpenAI-compatible API is configured as your active provider).`;
           newEmotion = "sad";
         }
       } else {
