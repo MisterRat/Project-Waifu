@@ -20,24 +20,45 @@ interface ChatConsoleProps {
   openWebUIConfig: OpenWebUIConfig;
   ttsConfig: TTSConfig;
   sttConfig: STTConfig;
+  profiles?: WaifuProfile[];
+  activeProfileId?: string;
+  onSwitchWaifu?: (id: string) => void;
+  onSaveProfile?: (updatedProfile: WaifuProfile) => void;
+  onCreateProfile?: (newProfile: WaifuProfile) => void;
+  onDeleteProfile?: (id: string) => void;
+  onResetDefaults?: () => void;
+  onOpenPersonaTab?: () => void;
   onTTSChange?: (config: TTSConfig) => void;
   onSTTChange?: (config: STTConfig) => void;
   onUpdateSystemPrompt?: (newPrompt: string) => void;
   onDebugLog?: (msg: string) => void;
+  onMicStatusChange?: (status: { isListening: boolean; isTranscribing: boolean; toggleListening: () => void }) => void;
 }
 
 export const ChatConsole: React.FC<ChatConsoleProps> = ({
   openWebUIConfig,
   ttsConfig,
   sttConfig,
+  profiles: propsProfiles,
+  activeProfileId: propsActiveProfileId,
+  onSwitchWaifu: propsOnSwitchWaifu,
+  onSaveProfile: propsOnSaveProfile,
+  onCreateProfile: propsOnCreateProfile,
+  onDeleteProfile: propsOnDeleteProfile,
+  onResetDefaults: propsOnResetDefaults,
+  onOpenPersonaTab,
   onTTSChange,
   onSTTChange,
   onUpdateSystemPrompt,
   onDebugLog,
+  onMicStatusChange,
 }) => {
-  const [profiles, setProfiles] = useState<WaifuProfile[]>(loadWaifuProfiles);
-  const [activeProfileId, setActiveProfileIdState] = useState<string>(getActiveWaifuId);
+  const [localProfiles, setLocalProfiles] = useState<WaifuProfile[]>(loadWaifuProfiles);
+  const [localActiveProfileId, setLocalActiveProfileId] = useState<string>(getActiveWaifuId);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+
+  const profiles = propsProfiles || localProfiles;
+  const activeProfileId = propsActiveProfileId || localActiveProfileId;
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId) || profiles[0] || DEFAULT_WAIFU_PROFILES[0];
 
@@ -167,8 +188,12 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
 
   // When switching waifu, load her chat history
   const handleSwitchWaifu = (newId: string) => {
-    setActiveProfileIdState(newId);
-    setActiveWaifuId(newId);
+    if (propsOnSwitchWaifu) {
+      propsOnSwitchWaifu(newId);
+    } else {
+      setLocalActiveProfileId(newId);
+      setActiveWaifuId(newId);
+    }
 
     const targetProfile = profiles.find((p) => p.id === newId) || DEFAULT_WAIFU_PROFILES[0];
     const newHistory = getWaifuChatHistory(newId, targetProfile.greetingMessage);
@@ -194,34 +219,50 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   };
 
   const handleSaveProfile = (updatedProfile: WaifuProfile) => {
-    const updated = profiles.map((p) => (p.id === updatedProfile.id ? updatedProfile : p));
-    setProfiles(updated);
-    saveWaifuProfiles(updated);
+    if (propsOnSaveProfile) {
+      propsOnSaveProfile(updatedProfile);
+    } else {
+      const updated = profiles.map((p) => (p.id === updatedProfile.id ? updatedProfile : p));
+      setLocalProfiles(updated);
+      saveWaifuProfiles(updated);
+    }
     if (onUpdateSystemPrompt && updatedProfile.id === activeProfileId) {
       onUpdateSystemPrompt(updatedProfile.personalityPrompt);
     }
   };
 
   const handleCreateProfile = (newProfile: WaifuProfile) => {
-    const updated = [...profiles, newProfile];
-    setProfiles(updated);
-    saveWaifuProfiles(updated);
-    handleSwitchWaifu(newProfile.id);
+    if (propsOnCreateProfile) {
+      propsOnCreateProfile(newProfile);
+    } else {
+      const updated = [...profiles, newProfile];
+      setLocalProfiles(updated);
+      saveWaifuProfiles(updated);
+      handleSwitchWaifu(newProfile.id);
+    }
   };
 
   const handleDeleteProfile = (id: string) => {
-    const updated = profiles.filter((p) => p.id !== id);
-    setProfiles(updated);
-    saveWaifuProfiles(updated);
-    if (activeProfileId === id && updated.length > 0) {
-      handleSwitchWaifu(updated[0].id);
+    if (propsOnDeleteProfile) {
+      propsOnDeleteProfile(id);
+    } else {
+      const updated = profiles.filter((p) => p.id !== id);
+      setLocalProfiles(updated);
+      saveWaifuProfiles(updated);
+      if (activeProfileId === id && updated.length > 0) {
+        handleSwitchWaifu(updated[0].id);
+      }
     }
   };
 
   const handleResetDefaults = () => {
-    setProfiles(DEFAULT_WAIFU_PROFILES);
-    saveWaifuProfiles(DEFAULT_WAIFU_PROFILES);
-    handleSwitchWaifu("aoi");
+    if (propsOnResetDefaults) {
+      propsOnResetDefaults();
+    } else {
+      setLocalProfiles(DEFAULT_WAIFU_PROFILES);
+      saveWaifuProfiles(DEFAULT_WAIFU_PROFILES);
+      handleSwitchWaifu("aoi");
+    }
   };
 
   const isTTSEnabled = ttsConfig.enabled !== false;
@@ -431,6 +472,16 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
       await startMediaRecorder();
     }
   };
+
+  useEffect(() => {
+    if (onMicStatusChange) {
+      onMicStatusChange({
+        isListening,
+        isTranscribing,
+        toggleListening,
+      });
+    }
+  }, [isListening, isTranscribing, onMicStatusChange]);
 
   const speakText = async (text: string) => {
     if (ttsConfig.enabled === false) return;
@@ -704,14 +755,6 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
             );
           })}
         </div>
-
-        <button
-          onClick={() => setIsEditorOpen(true)}
-          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition shadow"
-        >
-          <Settings2 className="w-3.5 h-3.5 text-violet-400" />
-          <span>Edit Persona & Models</span>
-        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -777,44 +820,13 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
             </div>
 
             <div className="flex items-center gap-2 text-xs text-slate-400">
-              {/* TTS Toggle Button */}
-              <button
-                type="button"
-                onClick={toggleTTS}
-                className={`px-2.5 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1.5 transition ${
-                  isTTSEnabled
-                    ? "bg-violet-500/20 text-violet-300 border-violet-500/40 hover:bg-violet-500/30"
-                    : "bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300 hover:bg-slate-800"
-                }`}
-                title={
-                  isTTSEnabled
-                    ? "Text-to-Speech (TTS) voice synthesis is ON. Click to turn OFF."
-                    : "Text-to-Speech (TTS) voice synthesis is OFF. Click to turn ON."
-                }
-              >
-                {isTTSEnabled ? (
-                  <>
-                    <Volume2 className="w-3.5 h-3.5 text-violet-400" />
-                    <span>TTS: ON</span>
-                  </>
-                ) : (
-                  <>
-                    <VolumeX className="w-3.5 h-3.5 text-slate-500" />
-                    <span>TTS: OFF</span>
-                  </>
-                )}
-              </button>
-
-              <span className="bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 font-mono text-[11px]">
-                Model: {openWebUIConfig.model || "OpenWebUI / Gemini"}
-              </span>
               <button
                 onClick={handleClearHistory}
-                className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-800/60 transition flex items-center gap-1 text-[11px]"
+                className="p-1.5 px-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-800/60 transition flex items-center gap-1.5 text-xs font-medium"
                 title={`Clear chat history for ${activeProfile.name}`}
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Clear Chat</span>
+                <span>Clear Chat</span>
               </button>
             </div>
           </div>

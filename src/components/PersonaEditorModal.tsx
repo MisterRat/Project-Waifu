@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { WaifuProfile } from "../types";
 import { loadLive2DFromZip } from "../lib/live2dZipLoader";
-import { Settings2, Plus, Trash2, RotateCcw, Check, Sparkles, UserCheck, Bot, Volume2, Globe, FileArchive, Upload, Loader2 } from "lucide-react";
+import { Settings2, Plus, Trash2, RotateCcw, Check, Sparkles, UserCheck, Bot, Volume2, Globe, FileArchive, Upload, Loader2, MessageSquare } from "lucide-react";
 
 interface PersonaEditorModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
+  inline?: boolean;
+  onOpenChatTab?: () => void;
   profiles: WaifuProfile[];
   activeProfileId: string;
   onSelectProfile: (id: string) => void;
@@ -16,8 +18,10 @@ interface PersonaEditorModalProps {
 }
 
 export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
-  isOpen,
+  isOpen = false,
   onClose,
+  inline = false,
+  onOpenChatTab,
   profiles,
   activeProfileId,
   onSelectProfile,
@@ -62,12 +66,12 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
       setZipSuccessInfo(null);
       setZipError(null);
     }
-    if (isOpen) {
+    if (isOpen || inline) {
       fetchServerModels();
     }
-  }, [activeProfileId, profiles, isOpen]);
+  }, [activeProfileId, profiles, isOpen, inline]);
 
-  if (!isOpen) return null;
+  if (!inline && !isOpen) return null;
 
   const handleDeleteServerModel = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -167,35 +171,50 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
     setTimeout(() => setSavedSuccess(false), 2000);
   };
 
-  return (
-    <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden my-8">
-        
-        {/* Header Bar */}
-        <div className="bg-slate-950 border-b border-slate-800 p-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-2xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-violet-300">
-              <Settings2 className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold font-serif italic text-slate-100">
-                Waifu Persona Studio & Local Storage Manager
-              </h2>
-              <p className="text-xs text-slate-400">
-                Configure AI personalities, prompts, Live2D avatar models, and voice settings per Waifu.
-              </p>
-            </div>
+  const content = (
+    <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-5xl w-full shadow-2xl overflow-hidden my-4 mx-auto">
+      
+      {/* Header Bar */}
+      <div className="bg-slate-950 border-b border-slate-800 p-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-2xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-violet-300">
+            <Settings2 className="w-5 h-5" />
           </div>
-
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 w-8 h-8 rounded-full flex items-center justify-center transition"
-          >
-            ✕
-          </button>
+          <div>
+            <h2 className="text-lg font-bold font-serif italic text-slate-100">
+              Waifu Persona Studio & Local Storage Manager
+            </h2>
+            <p className="text-xs text-slate-400">
+              Configure AI personalities, prompts, Live2D avatar models, and voice settings per Waifu.
+            </p>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-800">
+        <div className="flex items-center gap-2">
+          {onOpenChatTab && (
+            <button
+              type="button"
+              onClick={onOpenChatTab}
+              className="bg-violet-600 hover:bg-violet-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-medium transition shadow flex items-center gap-1.5"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Launch Live Companion →</span>
+            </button>
+          )}
+
+          {!inline && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 w-8 h-8 rounded-full flex items-center justify-center transition"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-800">
           
           {/* Left Column: Waifu Selector List */}
           <div className="p-4 bg-slate-950/50 space-y-3">
@@ -494,13 +513,15 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
 
             {/* Actions */}
             <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition"
-              >
-                Close
-              </button>
+              {!inline && onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition"
+                >
+                  Close
+                </button>
+              )}
               <button
                 type="submit"
                 className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white font-medium text-xs rounded-xl shadow-lg shadow-violet-500/20 transition flex items-center gap-1.5"
@@ -515,6 +536,15 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
         </div>
 
       </div>
+  );
+
+  if (inline) {
+    return content;
+  }
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+      {content}
     </div>
   );
 };
