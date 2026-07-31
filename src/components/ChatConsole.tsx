@@ -102,6 +102,20 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
     e.stopPropagation();
   };
 
+  const handleChatHeaderTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      setIsDraggingChat(true);
+      chatDragRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        initialX: chatPos.x,
+        initialY: chatPos.y,
+      };
+      e.stopPropagation();
+    }
+  };
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDraggingChat) return;
@@ -113,17 +127,36 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
       });
     };
 
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDraggingChat || e.touches.length === 0) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - chatDragRef.current.startX;
+      const dy = touch.clientY - chatDragRef.current.startY;
+      setChatPos({
+        x: chatDragRef.current.initialX + dx,
+        y: chatDragRef.current.initialY + dy,
+      });
+    };
+
     const handleMouseUp = () => {
+      setIsDraggingChat(false);
+    };
+
+    const handleTouchEnd = () => {
       setIsDraggingChat(false);
     };
 
     if (isDraggingChat) {
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
+      window.addEventListener("touchmove", handleTouchMove, { passive: true });
+      window.addEventListener("touchend", handleTouchEnd);
     }
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
     };
   }, [isDraggingChat]);
 
@@ -718,6 +751,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         <div
           ref={chatContainerRef}
           onMouseUp={handleChatResizeSave}
+          onTouchEnd={handleChatResizeSave}
           style={{
             transform: `translate(${chatPos.x}px, ${chatPos.y}px)`,
             position: "relative",
@@ -731,6 +765,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
           {/* Console Header */}
           <div
             onMouseDown={handleChatHeaderMouseDown}
+            onTouchStart={handleChatHeaderTouchStart}
             className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4 cursor-move select-none"
             title="Drag to move conversation window"
           >

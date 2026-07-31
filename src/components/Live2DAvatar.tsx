@@ -50,6 +50,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const pixiCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const proceduralCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const displayAreaRef = useRef<HTMLDivElement | null>(null);
 
   const pixiAppRef = useRef<any>(null);
   const live2dModelRef = useRef<any>(null);
@@ -108,6 +109,20 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     e.stopPropagation();
   };
 
+  const handleHeaderTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      setIsDraggingWindow(true);
+      dragRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        initialX: pos.x,
+        initialY: pos.y,
+      };
+      e.stopPropagation();
+    }
+  };
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDraggingWindow) return;
@@ -119,17 +134,36 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       });
     };
 
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDraggingWindow || e.touches.length === 0) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - dragRef.current.startX;
+      const dy = touch.clientY - dragRef.current.startY;
+      setPos({
+        x: dragRef.current.initialX + dx,
+        y: dragRef.current.initialY + dy,
+      });
+    };
+
     const handleMouseUp = () => {
+      setIsDraggingWindow(false);
+    };
+
+    const handleTouchEnd = () => {
       setIsDraggingWindow(false);
     };
 
     if (isDraggingWindow) {
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
+      window.addEventListener("touchmove", handleTouchMove, { passive: true });
+      window.addEventListener("touchend", handleTouchEnd);
     }
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
     };
   }, [isDraggingWindow]);
   const [mouthOpenRatio, setMouthOpenRatio] = useState(0);
@@ -241,6 +275,68 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   };
 
   const handleMouseUp = () => {
+    isPanningRef.current = false;
+    isZoomingRef.current = false;
+  };
+
+  const touchStartRef = useRef<{ x: number; y: number; distance: number; modelX: number; modelY: number; scale: number }>({
+    x: 0,
+    y: 0,
+    distance: 0,
+    modelX: 0,
+    modelY: 0,
+    scale: 1,
+  });
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 1) {
+      isPanningRef.current = true;
+      const touch = e.touches[0];
+      dragStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        modelX: live2dModelRef.current?.x || 0,
+        modelY: live2dModelRef.current?.y || 0,
+      };
+    } else if (e.touches.length === 2) {
+      isZoomingRef.current = true;
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      touchStartRef.current = {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+        distance: dist,
+        modelX: 0,
+        modelY: 0,
+        scale: live2dModelRef.current?.scale.x || 1,
+      };
+    }
+  };
+
+  const handleTouchMoveCanvas = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 1 && isPanningRef.current && live2dModelRef.current) {
+      const touch = e.touches[0];
+      const dx = touch.clientX - dragStartRef.current.x;
+      const dy = touch.clientY - dragStartRef.current.y;
+      live2dModelRef.current.x = dragStartRef.current.modelX + dx;
+      live2dModelRef.current.y = dragStartRef.current.modelY + dy;
+      onTransformChange?.(live2dModelRef.current.scale.x, live2dModelRef.current.x, live2dModelRef.current.y);
+    } else if (e.touches.length === 2 && isZoomingRef.current && live2dModelRef.current) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      if (touchStartRef.current.distance > 0) {
+        const factor = dist / touchStartRef.current.distance;
+        const newScale = Math.max(0.05, Math.min(10.0, touchStartRef.current.scale * factor));
+        live2dModelRef.current.scale.set(newScale);
+        setZoomLevel(newScale);
+        onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
+      }
+    }
+  };
+
+  const handleTouchEndCanvas = () => {
     isPanningRef.current = false;
     isZoomingRef.current = false;
   };
@@ -755,6 +851,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       {/* Top Header Bar */}
       <div
         onMouseDown={handleHeaderMouseDown}
+        onTouchStart={handleHeaderTouchStart}
         className="bg-slate-950/95 border-b border-slate-800 px-4 py-3 flex items-center justify-between backdrop-blur z-10 cursor-move select-none"
         title="Drag to move window"
       >
@@ -782,11 +879,14 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
       {/* Interactive Display Area */}
       <div
-        ref={containerRef}
+        ref={displayAreaRef}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMoveCanvas}
+        onTouchEnd={handleTouchEndCanvas}
         onWheel={handleWheel}
         className="relative w-full h-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group flex-1"
       >
