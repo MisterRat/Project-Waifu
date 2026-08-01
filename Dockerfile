@@ -27,8 +27,9 @@ ENV PORT=3000
 COPY package.json ./
 RUN npm install --only=production
 
-# Copy compiled distribution bundle
+# Copy compiled distribution bundle and assets
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/assets ./assets
 
 EXPOSE 3000
 
