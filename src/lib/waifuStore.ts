@@ -27,10 +27,12 @@ export function loadWaifuProfiles(): WaifuProfile[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const cleaned = parsed.filter((p: WaifuProfile) => p.id !== "shizuku" && p.id !== "aoi");
-        if (cleaned.length > 0) {
-          return cleaned;
+        let cleaned = parsed.filter((p: WaifuProfile) => p.id !== "shizuku" && p.id !== "aoi");
+        const hasKei = cleaned.some((p: WaifuProfile) => p.id === "kei");
+        if (!hasKei) {
+          cleaned = [DEFAULT_WAIFU_PROFILES[0], ...cleaned];
         }
+        return cleaned;
       }
     }
   } catch (e) {
@@ -50,7 +52,7 @@ export function saveWaifuProfiles(profiles: WaifuProfile[]): void {
 export function getActiveWaifuId(): string {
   try {
     const id = localStorage.getItem(ACTIVE_WAIFU_ID_KEY);
-    if (id && id !== "shizuku") return id;
+    if (id && id !== "shizuku" && id !== "aoi") return id;
   } catch (e) {
     console.warn("Failed to read active waifu id", e);
   }
