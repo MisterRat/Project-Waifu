@@ -137,6 +137,13 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
 
+  useEffect(() => {
+    if (currentUser && currentUser.role !== "admin") {
+      setActiveTab("chat");
+      setIsMenuOpen(false);
+    }
+  }, [currentUser]);
+
   const fetchAuthMe = async () => {
     try {
       const res = await fetch("/api/auth/me", { credentials: "include" });
@@ -495,21 +502,23 @@ export default function App() {
                 </button>
               )}
 
-              {/* Hamburger Button */}
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="bg-slate-800/90 hover:bg-slate-700 text-slate-100 p-2.5 rounded-2xl border border-slate-700/80 flex items-center gap-2 transition shadow-lg shadow-black/20 group cursor-pointer"
-                title="Toggle settings & menu"
-              >
-                {isMenuOpen ? <X className="w-5 h-5 text-violet-400" /> : <Menu className="w-5 h-5 text-violet-400 group-hover:scale-110 transition-transform" />}
-                <span className="text-xs font-medium pr-1 hidden lg:inline">
-                  {activeTab === "chat" && "Live Companion"}
-                  {activeTab === "persona" && "Edit Persona"}
-                  {activeTab === "openwebui" && "OpenAI API"}
-                  {activeTab === "voice" && "Voice Settings"}
-                  {activeTab === "debug-log" && "Debug Logs"}
-                </span>
-              </button>
+              {/* Hamburger Button (Admin only) */}
+              {currentUser?.role === "admin" && (
+                <button
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className="bg-slate-800/90 hover:bg-slate-700 text-slate-100 p-2.5 rounded-2xl border border-slate-700/80 flex items-center gap-2 transition shadow-lg shadow-black/20 group cursor-pointer"
+                  title="Toggle settings & menu"
+                >
+                  {isMenuOpen ? <X className="w-5 h-5 text-violet-400" /> : <Menu className="w-5 h-5 text-violet-400 group-hover:scale-110 transition-transform" />}
+                  <span className="text-xs font-medium pr-1 hidden lg:inline">
+                    {activeTab === "chat" && "Live Companion"}
+                    {activeTab === "persona" && "Edit Persona"}
+                    {activeTab === "openwebui" && "OpenAI API"}
+                    {activeTab === "voice" && "Voice Settings"}
+                    {activeTab === "debug-log" && "Debug Logs"}
+                  </span>
+                </button>
+              )}
             </div>
 
         </div>

@@ -245,32 +245,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           ) : (
             <>
-              {/* Mode Selector for Owner vs Regular User */}
-              {userCount > 0 && (
-                <div className="flex items-center p-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono">
-                  <button
-                    type="button"
-                    onClick={() => { setAuthMode("magic"); setError(null); setMessage(null); setStep("email"); }}
-                    className={`flex-1 py-2 rounded-lg font-semibold transition cursor-pointer ${
-                      authMode === "magic" ? "bg-pink-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    Magic Link (Users)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setAuthMode("owner_pin"); setError(null); setMessage(null); }}
-                    className={`flex-1 py-2 rounded-lg font-semibold transition cursor-pointer ${
-                      authMode === "owner_pin" ? "bg-violet-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    System Owner PIN
-                  </button>
-                </div>
-              )}
-
               {userCount === 0 && (
-                <div className="p-3 bg-amber-950/30 border border-amber-800/40 rounded-xl text-xs text-amber-200/90 flex items-start gap-2.5">
+                <div className="p-3 bg-amber-950/30 border border-amber-800/40 rounded-xl text-xs text-amber-200/90 flex items-start gap-2.5 mb-2">
                   <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <div>
                     <strong className="font-semibold text-amber-300">System Owner Setup:</strong> SMTP is not configured yet. Set your persistent owner PIN for instant server access.
@@ -279,14 +255,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
 
               {error && (
-                <div className="p-3 bg-rose-950/50 border border-rose-800/80 rounded-xl text-xs text-rose-200 flex items-center gap-2">
+                <div className="p-3 bg-rose-950/50 border border-rose-800/80 rounded-xl text-xs text-rose-200 flex items-center gap-2 mb-2">
                   <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
 
               {message && (
-                <div className="p-3 bg-indigo-950/50 border border-indigo-800/80 rounded-xl text-xs text-indigo-200 flex items-center gap-2">
+                <div className="p-3 bg-indigo-950/50 border border-indigo-800/80 rounded-xl text-xs text-indigo-200 flex items-center gap-2 mb-2">
                   <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />
                   <span>{message}</span>
                 </div>
@@ -343,10 +319,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </>
                     )}
                   </button>
+
+                  {userCount > 0 && (
+                    <div className="text-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => { setAuthMode("magic"); setError(null); setMessage(null); }}
+                        className="text-xs text-pink-400 hover:underline cursor-pointer font-mono"
+                      >
+                        ← Back to Magic Link (Users)
+                      </button>
+                    </div>
+                  )}
                 </form>
               ) : (
                 /* Regular User Magic Link Flow - STRICTLY NO PIN FOR REGULAR USERS */
-                <div>
+                <div className="space-y-4">
                   {step === "email" ? (
                     <form onSubmit={handleRequestMagicLink} className="space-y-4">
                       <div>
@@ -367,7 +355,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </div>
 
                       <div className="p-3 bg-slate-950/40 border border-slate-800 rounded-xl text-[11px] text-slate-400">
-                        ℹ️ Regular users receive and authenticate exclusively via Magic Link.
+                        ℹ️ Regular users authenticate exclusively via Magic Link. No PIN required.
                       </div>
 
                       <button
@@ -384,6 +372,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           </>
                         )}
                       </button>
+
+                      {userCount > 0 && (
+                        <div className="text-center pt-2 border-t border-slate-800/80">
+                          <button
+                            type="button"
+                            onClick={() => { setAuthMode("owner_pin"); setError(null); setMessage(null); }}
+                            className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer font-mono"
+                          >
+                            System Owner? Sign in with PIN →
+                          </button>
+                        </div>
+                      )}
                     </form>
                   ) : (
                     <div className="space-y-4">

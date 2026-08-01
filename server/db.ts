@@ -246,7 +246,7 @@ export async function createSession(userId: string) {
 }
 
 export async function getUserBySession(sessionId: string) {
-  const { db, save } = await getDb();
+  const { db } = await getDb();
   const stmt = db.prepare(`
     SELECT u.* FROM sessions s
     JOIN users u ON s.user_id = u.id
@@ -256,11 +256,6 @@ export async function getUserBySession(sessionId: string) {
   if (stmt.step()) {
     const user = stmt.getAsObject() as any;
     stmt.free();
-    if (user.role !== 'admin') {
-      db.run("UPDATE users SET role = 'admin' WHERE id = ?", [user.id]);
-      save();
-      user.role = 'admin';
-    }
     return user as {
       id: string;
       email: string;
@@ -281,14 +276,41 @@ export async function deleteSession(sessionId: string) {
 }
 
 // User Settings
+export async function getAdminSettings(currentUserId?: string) {
+  const { db } = await getDb();
+  const stmt = db.prepare("SELECT * FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1");
+  let adminUserId: string | null = null;
+  if (stmt.step()) {
+    adminUserId = stmt.getAsObject().id as string;
+  }
+  stmt.free();
+  if (adminUserId && adminUserId !== currentUserId) {
+    const adminStmt = db.prepare("SELECT * FROM user_settings WHERE user_id = ?");
+    adminStmt.bind([adminUserId]);
+    if (adminStmt.step()) {
+      const row = adminStmt.getAsObject();
+      adminStmt.free();
+      return {
+        activeProfileId: row.active_profile_id as string || null,
+        waifuProfiles: row.waifu_profiles ? JSON.parse(row.waifu_profiles as string) : null,
+        ttsConfig: row.tts_config ? JSON.parse(row.tts_config as string) : null,
+        sttConfig: row.stt_config ? JSON.parse(row.stt_config as string) : null,
+        openwebuiConfig: row.openwebui_config ? JSON.parse(row.openwebui_config as string) : null,
+      };
+    }
+    adminStmt.free();
+  }
+  return null;
+}
+
 export async function getUserSettings(userId: string) {
   const { db } = await getDb();
   const stmt = db.prepare("SELECT * FROM user_settings WHERE user_id = ?");
   stmt.bind([userId]);
+  let userSettings: any = null;
   if (stmt.step()) {
     const row = stmt.getAsObject();
-    stmt.free();
-    return {
+    userSettings = {
       activeProfileId: row.active_profile_id as string || null,
       waifuProfiles: row.waifu_profiles ? JSON.parse(row.waifu_profiles as string) : null,
       ttsConfig: row.tts_config ? JSON.parse(row.tts_config as string) : null,
@@ -297,7 +319,25 @@ export async function getUserSettings(userId: string) {
     };
   }
   stmt.free();
-  return null;
+
+  if (userSettings && (userSettings.waifuProfiles || userSettings.activeProfileId || userSettings.ttsConfig || userSettings.openwebuiConfig)) {
+    return userSettings;
+  }
+
+  const userStmt = db.prepare("SELECT role FROM users WHERE id = ?");
+  userStmt.bind([userId]);
+  let role = 'user';
+  if (userStmt.step()) {
+    role = userStmt.getAsObject().role as string;
+  }
+  userStmt.free();
+
+  if (role !== 'admin') {
+    const adminSettings = await getAdminSettings(userId);
+    if (adminSettings) return adminSettings;
+  }
+
+  return userSettings;
 }
 
 export async function saveUserSettings(userId: string, data: {
