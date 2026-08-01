@@ -2,6 +2,21 @@ import { WaifuProfile, ChatMessage } from "../types";
 
 export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
   {
+    id: "kei",
+    name: "Kei",
+    tagline: "Friendly AI Companion & Assistant",
+    personalityPrompt:
+      "You are Kei, a friendly and warm anime AI companion (Waifu). You love chatting and helping out with daily tasks. Keep responses brief (1-3 sentences) and start with an emotion tag in brackets like [happy], [blush], [excited], [sad], [thinking].",
+    greetingMessage:
+      "[happy] Konnichiwa! I am Kei, your AI companion. So wonderful to meet you! How can I help you today?",
+    live2dModelUrl: "/models/kei/kei_basic_free/runtime/kei_basic_free.model3.json",
+    ttsVoice: "en-US-AnaNeural",
+    ttsPitch: 1.2,
+    ttsRate: 1.0,
+    themeColor: "pink",
+    avatarIcon: "🌸",
+  },
+  {
     id: "aoi",
     name: "Aoi",
     tagline: "Cheerful AI Companion & Tech Assistant",
@@ -61,7 +76,7 @@ export function getActiveWaifuId(): string {
   } catch (e) {
     console.warn("Failed to read active waifu id", e);
   }
-  return "aoi";
+  return "kei";
 }
 
 export function setActiveWaifuId(id: string): void {
