@@ -132,6 +132,7 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userCount, setUserCount] = useState<number>(0);
+  const [appVersion, setAppVersion] = useState<string>("0.2.0 Alpha");
   const [authLoaded, setAuthLoaded] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
@@ -142,6 +143,9 @@ export default function App() {
       const data = await res.json();
       if (res.ok) {
         setUserCount(data.userCount || 0);
+        if (data.version) {
+          setAppVersion(`v${data.version} Alpha`);
+        }
         if (data.user) {
           setCurrentUser(data.user);
           if (data.settings) {
@@ -383,7 +387,7 @@ export default function App() {
             <h1 className="text-xl font-serif italic text-slate-100 tracking-tight flex items-center">
               Project Waifu
               <span className="text-[10px] font-sans not-italic text-slate-500 ml-2 uppercase tracking-widest hidden sm:inline border border-slate-800 px-1.5 py-0.5 rounded-md">
-                v0.1 Alpha
+                {appVersion}
               </span>
             </h1>
           </div>

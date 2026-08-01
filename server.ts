@@ -39,6 +39,12 @@ env.useBrowserCache = false;
 let whisperPipeline: any = null;
 let whisperLoadingPromise: Promise<any> | null = null;
 
+let appVersion = "0.2.0";
+try {
+  const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf-8"));
+  if (pkg.version) appVersion = pkg.version;
+} catch (e) {}
+
 async function getWhisperPipeline() {
   if (whisperPipeline) return whisperPipeline;
   if (whisperLoadingPromise) return await whisperLoadingPromise;
@@ -69,7 +75,7 @@ async function startServer() {
 
   // Health check endpoint
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", message: "Project Waifu Server Running" });
+    res.json({ status: "ok", version: appVersion, message: "Project Waifu Server Running" });
   });
 
   // Auth helper middleware
@@ -81,20 +87,6 @@ async function startServer() {
       if (res) {
         res.clearCookie("waifu_session", { path: "/", sameSite: "lax" });
       }
-    }
-    const users = await getAllUsers();
-    if (users.length === 0) {
-      const newAdmin = await createUser("admin@local.test", "admin", "approved");
-      const session = await createSession(newAdmin.id);
-      if (res) {
-        res.cookie("waifu_session", session.sessionId, {
-          httpOnly: true,
-          maxAge: 30 * 24 * 60 * 60 * 1000,
-          sameSite: "lax",
-          path: "/",
-        });
-      }
-      return newAdmin;
     }
     return null;
   };
@@ -109,6 +101,7 @@ async function startServer() {
         user,
         settings,
         userCount,
+        version: appVersion,
       });
     } catch (err: any) {
       console.error("Auth /me error:", err);
