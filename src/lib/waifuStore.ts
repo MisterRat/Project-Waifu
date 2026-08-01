@@ -16,24 +16,9 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
     themeColor: "pink",
     avatarIcon: "🌸",
   },
-  {
-    id: "aoi",
-    name: "Aoi",
-    tagline: "Cheerful AI Companion & Tech Assistant",
-    personalityPrompt:
-      "You are Aoi, a cheerful and affectionate anime AI companion (Waifu). You love chatting about technology, anime, and day-to-day life. Keep responses brief (1-3 sentences) and start with an emotion tag in brackets like [happy], [blush], [excited], [sad], [thinking].",
-    greetingMessage:
-      "[happy] Konnichiwa! I am Aoi, your AI companion. I'm so excited to talk with you today! What shall we work on?",
-    live2dModelUrl: "",
-    ttsVoice: "en-US-AnaNeural",
-    ttsPitch: 1.2,
-    ttsRate: 1.0,
-    themeColor: "violet",
-    avatarIcon: "✨",
-  },
 ];
 
-const PROFILES_STORAGE_KEY = "project_waifu_profiles_v3";
+const PROFILES_STORAGE_KEY = "project_waifu_profiles_v4";
 const ACTIVE_WAIFU_ID_KEY = "project_waifu_active_id";
 
 export function loadWaifuProfiles(): WaifuProfile[] {
@@ -42,14 +27,7 @@ export function loadWaifuProfiles(): WaifuProfile[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const cleaned = parsed
-          .filter((p: WaifuProfile) => p.id !== "shizuku")
-          .map((p: WaifuProfile) => {
-            if (p.id === "aoi" && p.live2dModelUrl?.includes("haru_greeter_t03")) {
-              return { ...p, live2dModelUrl: "" };
-            }
-            return p;
-          });
+        const cleaned = parsed.filter((p: WaifuProfile) => p.id !== "shizuku" && p.id !== "aoi");
         if (cleaned.length > 0) {
           return cleaned;
         }

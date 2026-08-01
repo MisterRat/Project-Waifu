@@ -566,30 +566,29 @@ async function startServer() {
     fs.mkdirSync(MODELS_DIR, { recursive: true });
   }
 
-  // Auto-extract assets/kei_en.zip if present and not yet extracted
+  // Auto-extract assets/kei_en.zip if present and model3.json not yet extracted
   const defaultKeiZipPath = path.join(process.cwd(), "assets", "kei_en.zip");
   const keiFolderPath = path.join(MODELS_DIR, "kei");
-  if (fs.existsSync(defaultKeiZipPath) && !fs.existsSync(keiFolderPath)) {
+  const modelJsonCheckPath = path.join(keiFolderPath, "kei_basic_free", "runtime", "kei_basic_free.model3.json");
+  if (fs.existsSync(defaultKeiZipPath) && !fs.existsSync(modelJsonCheckPath)) {
     try {
+      console.log("[Project Waifu] Extracting default Kei model from assets/kei_en.zip...");
       const zipBuffer = fs.readFileSync(defaultKeiZipPath);
-      JSZip.loadAsync(zipBuffer).then(async (zip) => {
-        fs.mkdirSync(keiFolderPath, { recursive: true });
-        const zipKeys = Object.keys(zip.files);
-        for (const key of zipKeys) {
-          const entry = zip.files[key];
-          if (entry.dir) continue;
-          const outPath = path.join(keiFolderPath, key);
-          const parentDir = path.dirname(outPath);
-          if (!fs.existsSync(parentDir)) {
-            fs.mkdirSync(parentDir, { recursive: true });
-          }
-          const contentBuffer = await entry.async("nodebuffer");
-          fs.writeFileSync(outPath, contentBuffer);
+      const zip = await JSZip.loadAsync(zipBuffer);
+      fs.mkdirSync(keiFolderPath, { recursive: true });
+      const zipKeys = Object.keys(zip.files);
+      for (const key of zipKeys) {
+        const entry = zip.files[key];
+        if (entry.dir) continue;
+        const outPath = path.join(keiFolderPath, key);
+        const parentDir = path.dirname(outPath);
+        if (!fs.existsSync(parentDir)) {
+          fs.mkdirSync(parentDir, { recursive: true });
         }
-        console.log("[Project Waifu] Auto-extracted default Kei model from assets/kei_en.zip");
-      }).catch(err => {
-        console.error("[Project Waifu] Failed to async load kei_en.zip:", err);
-      });
+        const contentBuffer = await entry.async("nodebuffer");
+        fs.writeFileSync(outPath, contentBuffer);
+      }
+      console.log("[Project Waifu] Successfully extracted default Kei model!");
     } catch (err) {
       console.error("[Project Waifu] Failed to extract kei_en.zip:", err);
     }

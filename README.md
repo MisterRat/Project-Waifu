@@ -31,7 +31,7 @@ If you have never deployed an app using Portainer before, follow this simple ste
    - **Build method**: Click on **Repository**.
 
 4. **Repository Settings**
-   - **Repository URL**: Paste your GitHub repository URL (e.g., `https://github.com/your-username/your-repo-name.git`).
+   - **Repository URL**: `https://github.com/MisterRat/Project-Waifu.git`
    - **Repository reference**: Enter `refs/heads/main` (or `main`).
    - **Compose path**: Ensure `docker-compose.yml` is specified.
    *(If your repository is private, enable **Authentication** and enter your GitHub username and Personal Access Token (PAT)).*
@@ -54,8 +54,8 @@ If you prefer using Docker CLI directly on your server:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/MisterRat/Project-Waifu.git
+cd Project-Waifu
 
 # 2. (Optional) Copy .env.example if you wish to pre-configure keys
 cp .env.example .env
