@@ -20,6 +20,7 @@ export async function sendMagicLinkEmail(toEmail: string, magicLink: string, pin
       port: smtp.port,
       secure: smtp.secure,
       auth: smtp.authUser && smtp.authPass ? { user: smtp.authUser, pass: smtp.authPass } : undefined,
+      tls: { rejectUnauthorized: false },
     });
 
     const info = await transporter.sendMail({
@@ -64,6 +65,7 @@ export async function sendAdminPendingUserNotification(userEmail: string, appUrl
       port: smtp.port,
       secure: smtp.secure,
       auth: smtp.authUser && smtp.authPass ? { user: smtp.authUser, pass: smtp.authPass } : undefined,
+      tls: { rejectUnauthorized: false },
     });
 
     await transporter.sendMail({
@@ -105,6 +107,7 @@ export async function testSmtpConnection(smtp: {
     port: smtp.port,
     secure: smtp.secure,
     auth: smtp.authUser && smtp.authPass ? { user: smtp.authUser, pass: smtp.authPass } : undefined,
+    tls: { rejectUnauthorized: false },
   });
 
   await transporter.verify();

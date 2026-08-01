@@ -467,7 +467,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                   <input
                     type="checkbox"
                     checked={smtp.secure}
-                    onChange={(e) => setSmtp({ ...smtp, secure: e.target.checked })}
+                    onChange={(e) => {
+                      const newSecure = e.target.checked;
+                      let newPort = smtp.port;
+                      if (newSecure && (smtp.port === 587 || !smtp.port)) {
+                        newPort = 465;
+                      } else if (!newSecure && smtp.port === 465) {
+                        newPort = 587;
+                      }
+                      setSmtp({ ...smtp, secure: newSecure, port: newPort });
+                    }}
                     className="rounded border-slate-800 text-pink-500 focus:ring-pink-500 bg-slate-950"
                   />
                   Use SSL/TLS Secure Connection (Port 465)
