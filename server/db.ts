@@ -3,7 +3,15 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+let DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+try {
+  const parentData = path.resolve(process.cwd(), "../data");
+  const parentBase = path.resolve(process.cwd(), "..");
+  if (fs.existsSync(parentBase)) {
+    DATA_DIR = parentData;
+  }
+} catch (e) {}
+
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
