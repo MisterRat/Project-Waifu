@@ -909,13 +909,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         {/* Background Radial Glow */}
         <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-violet-500 via-transparent to-transparent"></div>
 
-        {/* Live2D Active Status Ribbon */}
-        {live2dStatus === "active" && (
-          <div className="absolute top-3 left-3 text-[10px] text-emerald-300 bg-emerald-950/80 backdrop-blur px-2.5 py-1 rounded-lg border border-emerald-800/80 pointer-events-none opacity-90 font-mono flex items-center gap-1.5 z-20">
-            <Check className="w-3 h-3 text-emerald-400" />
-            <span>Live2D WebGL Model Active ({characterName})</span>
-          </div>
-        )}
 
         {/* Live2D Error / Fallback Badge */}
         {live2dStatus === "error" && (

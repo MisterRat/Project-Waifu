@@ -1,3 +1,23 @@
+export interface User {
+  id: string;
+  email: string;
+  role: "admin" | "user";
+  status: "pending" | "approved" | "rejected";
+  pin?: string | null;
+  created_at: number;
+  last_login: number | null;
+}
+
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  authUser: string;
+  authPass: string;
+  fromEmail: string;
+  adminEmail: string;
+}
+
 export type EmotionType = "happy" | "blush" | "sad" | "surprised" | "thinking" | "excited" | "neutral";
 
 export interface ChatMessage {

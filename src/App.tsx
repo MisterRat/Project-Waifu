@@ -4,12 +4,14 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile } from "./types";
+import { OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile, User } from "./types";
 import { OpenWebUITester } from "./components/OpenWebUITester";
 import { VoicePipelineTester } from "./components/VoicePipelineTester";
 import { DebugLogViewer } from "./components/DebugLogViewer";
 import { ChatConsole } from "./components/ChatConsole";
 import { PersonaEditorModal } from "./components/PersonaEditorModal";
+import { AuthModal } from "./components/AuthModal";
+import { AdminPanelModal } from "./components/AdminPanelModal";
 import {
   loadWaifuProfiles,
   saveWaifuProfiles,
@@ -17,7 +19,7 @@ import {
   setActiveWaifuId,
   DEFAULT_WAIFU_PROFILES,
 } from "./lib/waifuStore";
-import { Heart, Terminal, Radio, Mic, MessageSquare, Settings2, Menu, X, ChevronRight, Activity } from "lucide-react";
+import { Heart, Terminal, Radio, Mic, MessageSquare, Settings2, Menu, X, ChevronRight, Activity, Shield, UserCheck, Key, Mail } from "lucide-react";
 
 const DEFAULT_OPENWEBUI_CONFIG: OpenWebUIConfig = {
   enabled: true,
@@ -128,15 +130,87 @@ export default function App() {
   const [profiles, setProfiles] = useState<WaifuProfile[]>(loadWaifuProfiles);
   const [activeProfileId, setActiveProfileIdState] = useState<string>(getActiveWaifuId);
 
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userCount, setUserCount] = useState<number>(0);
+  const [authLoaded, setAuthLoaded] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+
+  const fetchAuthMe = async () => {
+    try {
+      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const data = await res.json();
+      if (res.ok) {
+        setUserCount(data.userCount || 0);
+        if (data.user) {
+          setCurrentUser(data.user);
+          if (data.settings) {
+            applyServerSettings(data.settings);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch auth status:", e);
+    } finally {
+      setAuthLoaded(true);
+    }
+  };
+
+  const applyServerSettings = (settings: any) => {
+    if (settings.openwebuiConfig) {
+      setOpenWebUIConfigState(settings.openwebuiConfig);
+    }
+    if (settings.ttsConfig) {
+      setTTSConfigState(settings.ttsConfig);
+    }
+    if (settings.sttConfig) {
+      setSTTConfigState(settings.sttConfig);
+    }
+    if (settings.waifuProfiles && Array.isArray(settings.waifuProfiles)) {
+      setProfiles(settings.waifuProfiles);
+      saveWaifuProfiles(settings.waifuProfiles);
+    }
+    if (settings.activeProfileId) {
+      setActiveProfileIdState(settings.activeProfileId);
+      setActiveWaifuId(settings.activeProfileId);
+    }
+  };
+
+  const syncSettingsToServer = async (overrides?: any) => {
+    if (!currentUser) return;
+    try {
+      await fetch("/api/user/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activeProfileId: overrides?.activeProfileId || activeProfileId,
+          waifuProfiles: overrides?.waifuProfiles || profiles,
+          ttsConfig: overrides?.ttsConfig || ttsConfig,
+          sttConfig: overrides?.sttConfig || sttConfig,
+          openwebuiConfig: overrides?.openwebuiConfig || openWebUIConfig,
+        }),
+        credentials: "include",
+      });
+    } catch (e) {
+      console.error("Failed to sync settings to server:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchAuthMe();
+  }, []);
+
   const handleSwitchWaifu = (id: string) => {
     setActiveWaifuId(id);
     setActiveProfileIdState(id);
+    syncSettingsToServer({ activeProfileId: id });
   };
 
   const handleSaveProfile = (updatedProfile: WaifuProfile) => {
     const updated = profiles.map((p) => (p.id === updatedProfile.id ? updatedProfile : p));
     setProfiles(updated);
     saveWaifuProfiles(updated);
+    syncSettingsToServer({ waifuProfiles: updated });
   };
 
   const handleCreateProfile = (newProfile: WaifuProfile) => {
@@ -144,6 +218,7 @@ export default function App() {
     setProfiles(updated);
     saveWaifuProfiles(updated);
     handleSwitchWaifu(newProfile.id);
+    syncSettingsToServer({ waifuProfiles: updated, activeProfileId: newProfile.id });
   };
 
   const handleDeleteProfile = (id: string) => {
@@ -153,12 +228,14 @@ export default function App() {
     if (activeProfileId === id && updated.length > 0) {
       handleSwitchWaifu(updated[0].id);
     }
+    syncSettingsToServer({ waifuProfiles: updated });
   };
 
   const handleResetDefaults = () => {
     setProfiles(DEFAULT_WAIFU_PROFILES);
     saveWaifuProfiles(DEFAULT_WAIFU_PROFILES);
     handleSwitchWaifu(DEFAULT_WAIFU_PROFILES[0].id);
+    syncSettingsToServer({ waifuProfiles: DEFAULT_WAIFU_PROFILES, activeProfileId: DEFAULT_WAIFU_PROFILES[0].id });
   };
 
   const [openWebUIConfig, setOpenWebUIConfigState] = useState<OpenWebUIConfig>(getInitialOpenWebUIConfig);
@@ -171,6 +248,7 @@ export default function App() {
       } catch (e) {
         console.error("Error saving openwebui_config to localStorage:", e);
       }
+      syncSettingsToServer({ openwebuiConfig: updated });
       return updated;
     });
   };
@@ -185,6 +263,7 @@ export default function App() {
       } catch (e) {
         console.error("Error saving tts_config to localStorage:", e);
       }
+      syncSettingsToServer({ ttsConfig: updated });
       return updated;
     });
   };
@@ -199,6 +278,7 @@ export default function App() {
       } catch (e) {
         console.error("Error saving stt_config to localStorage:", e);
       }
+      syncSettingsToServer({ sttConfig: updated });
       return updated;
     });
   };
@@ -230,6 +310,63 @@ export default function App() {
       micStatus.toggleListening();
     }
   };
+
+  if (!authLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-400 flex items-center justify-center font-sans">
+        <div className="flex items-center gap-3">
+          <div className="w-4 h-4 rounded-full bg-violet-600 animate-ping"></div>
+          <span className="font-mono text-sm">Loading Project Waifu...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col items-center justify-center p-4 font-sans selection:bg-violet-600 selection:text-white">
+        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center space-y-6 animate-fade-in">
+          <div className="w-16 h-16 rounded-2xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center mx-auto text-violet-400">
+            <Shield className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold font-serif text-slate-100">Project Waifu</h1>
+            <p className="text-sm text-slate-400">
+              All functionality is securely protected behind authentication. Please sign in or register to access your AI companion and persistent settings.
+            </p>
+          </div>
+          <button
+            onClick={() => setIsAuthModalOpen(true)}
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-pink-600 to-violet-600 hover:from-pink-500 hover:to-violet-500 text-white font-semibold py-3 px-6 rounded-2xl text-sm shadow-xl shadow-violet-600/20 transition cursor-pointer"
+          >
+            <UserCheck className="w-5 h-5" />
+            <span>Sign In / Register Account</span>
+          </button>
+        </div>
+
+        <AuthModal
+          isOpen={isAuthModalOpen || !currentUser}
+          onClose={() => setIsAuthModalOpen(false)}
+          currentUser={currentUser}
+          userCount={userCount}
+          onLoginSuccess={(user, settings) => {
+            setCurrentUser(user);
+            if (settings) {
+              applyServerSettings(settings);
+            }
+          }}
+          onLogout={async () => {
+            try {
+              await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+            } catch (e) {
+              console.error(e);
+            }
+            setCurrentUser(null);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-violet-600 selection:text-white">
@@ -326,10 +463,38 @@ export default function App() {
                 </span>
               </button>
 
+              {/* Account / User Sync Button */}
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="flex items-center gap-1.5 bg-slate-950/70 hover:bg-slate-900 border border-slate-800/80 hover:border-pink-500/40 px-2.5 md:px-3 py-1.5 rounded-xl text-xs font-mono shadow-inner transition cursor-pointer"
+                title={currentUser ? `Logged in as ${currentUser.email}` : "Sign in to sync profiles & settings server-side"}
+              >
+                <div className={`w-2 h-2 rounded-full ${currentUser ? "bg-pink-500" : "bg-slate-600"}`}></div>
+                <span className="text-slate-300">
+                  {currentUser ? (
+                    <strong className="text-pink-300 font-semibold">{currentUser.email.split("@")[0]}</strong>
+                  ) : (
+                    <span>Sign In</span>
+                  )}
+                </span>
+              </button>
+
+              {/* Admin Panel Button (if admin) */}
+              {currentUser?.role === "admin" && (
+                <button
+                  onClick={() => setIsAdminModalOpen(true)}
+                  className="flex items-center gap-1.5 bg-violet-950/60 hover:bg-violet-900 border border-violet-800/80 text-violet-200 px-2.5 md:px-3 py-1.5 rounded-xl text-xs font-mono shadow-inner transition cursor-pointer"
+                  title="Open Admin & User Approvals Panel"
+                >
+                  <Shield className="w-3.5 h-3.5 text-violet-400" />
+                  <span className="font-semibold hidden sm:inline">Admin</span>
+                </button>
+              )}
+
               {/* Hamburger Button */}
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="bg-slate-800/90 hover:bg-slate-700 text-slate-100 p-2.5 rounded-2xl border border-slate-700/80 flex items-center gap-2 transition shadow-lg shadow-black/20 group"
+                className="bg-slate-800/90 hover:bg-slate-700 text-slate-100 p-2.5 rounded-2xl border border-slate-700/80 flex items-center gap-2 transition shadow-lg shadow-black/20 group cursor-pointer"
                 title="Toggle settings & menu"
               >
                 {isMenuOpen ? <X className="w-5 h-5 text-violet-400" /> : <Menu className="w-5 h-5 text-violet-400 group-hover:scale-110 transition-transform" />}
@@ -475,6 +640,44 @@ export default function App() {
                 </div>
                 <ChevronRight className="w-4 h-4 opacity-50" />
               </button>
+
+              <div className="pt-2 border-t border-slate-800/80 my-2"></div>
+
+              <button
+                onClick={() => { setIsAuthModalOpen(true); setIsMenuOpen(false); }}
+                className="w-full text-left p-3.5 rounded-2xl font-medium transition flex items-center justify-between border bg-pink-950/20 text-pink-200 border-pink-800/40 hover:bg-pink-900/30"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-pink-600/30 text-pink-300 border border-pink-500/40">
+                    <UserCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold">User Account & Settings Sync</div>
+                    <div className="text-xs text-pink-300/80 font-normal">
+                      {currentUser ? `Signed in as ${currentUser.email}` : "Sign in to save profiles server-side"}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 opacity-50" />
+              </button>
+
+              {currentUser?.role === "admin" && (
+                <button
+                  onClick={() => { setIsAdminModalOpen(true); setIsMenuOpen(false); }}
+                  className="w-full text-left p-3.5 rounded-2xl font-medium transition flex items-center justify-between border bg-violet-950/30 text-violet-200 border-violet-800/50 hover:bg-violet-900/40"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-violet-600/30 text-violet-300 border border-violet-500/40">
+                      <Shield className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold">Admin Panel & SMTP Config</div>
+                      <div className="text-xs text-violet-300/80 font-normal">User approvals, roles & email setup</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 opacity-50" />
+                </button>
+              )}
             </nav>
 
             {/* Drawer Status Footer */}
@@ -586,6 +789,35 @@ export default function App() {
         {activeTab === "debug-log" && <DebugLogViewer logs={debugLogs} />}
 
       </main>
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        currentUser={currentUser}
+        userCount={userCount}
+        onLoginSuccess={(user, settings) => {
+          setCurrentUser(user);
+          if (settings) {
+            applyServerSettings(settings);
+          }
+        }}
+        onLogout={async () => {
+          try {
+            await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+          } catch (e) {
+            console.error(e);
+          }
+          setCurrentUser(null);
+        }}
+      />
+
+      {/* Admin Panel Modal */}
+      <AdminPanelModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+        currentUser={currentUser}
+      />
 
       {/* Bottom Status Bar / Footer */}
       <footer className="h-8 bg-slate-900/80 border-t border-slate-800 flex items-center px-6 justify-between text-[10px] text-slate-500 font-mono">

@@ -2,9 +2,35 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import JSZip from "jszip";
+import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import { pipeline, env } from "@xenova/transformers";
+import {
+  getUserByEmail,
+  getUserById,
+  createUser,
+  updateUserStatus,
+  updateUserRole,
+  deleteUser,
+  getAllUsers,
+  getUserCount,
+  createAuthToken,
+  verifyAuthToken,
+  createSession,
+  getUserBySession,
+  deleteSession,
+  getUserSettings,
+  saveUserSettings,
+  getSmtpConfig,
+  saveSmtpConfig,
+  setUserPin,
+} from "./server/db.js";
+import {
+  sendMagicLinkEmail,
+  sendAdminPendingUserNotification,
+  testSmtpConnection,
+} from "./server/mailer.js";
 
 // Configure Transformers.js for Node runtime
 env.allowLocalModels = false;
@@ -39,10 +65,498 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: "50mb" }));
+  app.use(cookieParser());
 
   // Health check endpoint
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", message: "Project Waifu Server Running" });
+  });
+
+  // Auth helper middleware
+  const getCurrentUser = async (req: express.Request, res?: express.Response) => {
+    const sessionId = req.cookies?.waifu_session || (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : null);
+    if (sessionId) {
+      const user = await getUserBySession(sessionId);
+      if (user) return user;
+      if (res) {
+        res.clearCookie("waifu_session", { path: "/", sameSite: "lax" });
+      }
+    }
+    const users = await getAllUsers();
+    if (users.length === 0) {
+      const newAdmin = await createUser("admin@local.test", "admin", "approved");
+      const session = await createSession(newAdmin.id);
+      if (res) {
+        res.cookie("waifu_session", session.sessionId, {
+          httpOnly: true,
+          maxAge: 30 * 24 * 60 * 60 * 1000,
+          sameSite: "lax",
+          path: "/",
+        });
+      }
+      return newAdmin;
+    }
+    return null;
+  };
+
+  // GET /api/auth/me
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const user = await getCurrentUser(req, res);
+      const userCount = await getUserCount();
+      const settings = user ? await getUserSettings(user.id) : null;
+      return res.json({
+        user,
+        settings,
+        userCount,
+      });
+    } catch (err: any) {
+      console.error("Auth /me error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/auth/register
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email || !email.trim() || !email.includes("@")) {
+        return res.status(400).json({ error: "Valid email address is required." });
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+      let user = await getUserByEmail(cleanEmail);
+      const count = await getUserCount();
+      const isFirst = count === 0;
+
+      if (user) {
+        if (user.status === "pending") {
+          return res.json({
+            status: "pending",
+            message: "Account registration is pending approval by the Administrator.",
+          });
+        }
+        if (user.status === "rejected") {
+          return res.status(403).json({ error: "Account registration was not approved." });
+        }
+        // If already approved, issue magic link directly
+        const { token: magicToken } = await createAuthToken(user.id, "magic_link");
+        const { token: pinToken } = await createAuthToken(user.id, "pin");
+        const appUrl = `${req.protocol}://${req.get("host")}`;
+        const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
+
+        const mailRes = await sendMagicLinkEmail(cleanEmail, magicLinkUrl, pinToken);
+
+        return res.json({
+          status: "approved",
+          message: mailRes.sent ? "Magic Link and PIN sent to your email (and available below)." : "Magic Link and PIN generated.",
+          magicLink: magicLinkUrl,
+          pin: pinToken,
+        });
+      }
+
+      // Create new user (First user automatically approved as admin)
+      const role = isFirst ? "admin" : "user";
+      const status = isFirst ? "approved" : "pending";
+      user = await createUser(cleanEmail, role, status);
+
+      if (status === "approved") {
+        const { token: magicToken } = await createAuthToken(user.id, "magic_link");
+        const { token: pinToken } = await createAuthToken(user.id, "pin");
+        const appUrl = `${req.protocol}://${req.get("host")}`;
+        const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
+
+        const mailRes = await sendMagicLinkEmail(cleanEmail, magicLinkUrl, pinToken);
+
+        return res.json({
+          status: "approved",
+          isFirstUser: true,
+          message: "Account created as Administrator! Magic link generated.",
+          magicLink: magicLinkUrl,
+          pin: pinToken,
+        });
+      } else {
+        const appUrl = `${req.protocol}://${req.get("host")}`;
+        await sendAdminPendingUserNotification(cleanEmail, appUrl);
+
+        return res.json({
+          status: "pending",
+          isFirstUser: false,
+          message: "Registration submitted! An Administrator will review your account request.",
+        });
+      }
+    } catch (err: any) {
+      console.error("Register error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/auth/login
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email || !email.trim()) {
+        return res.status(400).json({ error: "Email is required." });
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+      const user = await getUserByEmail(cleanEmail);
+
+      if (!user) {
+        return res.status(404).json({ error: "No account found for this email. Please register first." });
+      }
+
+      if (user.status === "pending") {
+        return res.status(403).json({ error: "Your account is pending approval by the Administrator." });
+      }
+
+      if (user.status === "rejected") {
+        return res.status(403).json({ error: "Your account request was declined." });
+      }
+
+      const { token: magicToken } = await createAuthToken(user.id, "magic_link");
+      const { token: pinToken } = await createAuthToken(user.id, "pin");
+      const appUrl = `${req.protocol}://${req.get("host")}`;
+      const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
+
+      const mailRes = await sendMagicLinkEmail(cleanEmail, magicLinkUrl, pinToken);
+
+      return res.json({
+        message: mailRes.sent ? "Magic link and PIN sent to your email (and available below)!" : "Magic link and PIN generated.",
+        magicLink: magicLinkUrl,
+        pin: pinToken,
+      });
+    } catch (err: any) {
+      console.error("Login error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/auth/verify
+  app.post("/api/auth/verify", async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token || !token.trim()) {
+        return res.status(400).json({ error: "Login token or PIN is required." });
+      }
+
+      const tokenObj = await verifyAuthToken(token.trim());
+      if (!tokenObj) {
+        return res.status(400).json({ error: "Invalid or expired login token / PIN." });
+      }
+
+      const user = await getUserById(tokenObj.user_id);
+      if (!user || user.status !== "approved") {
+        return res.status(403).json({ error: "User account is not active or approved." });
+      }
+
+      const session = await createSession(user.id);
+      res.cookie("waifu_session", session.sessionId, {
+        httpOnly: true,
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+      });
+
+      const settings = await getUserSettings(user.id);
+
+      return res.json({
+        user,
+        settings,
+        sessionId: session.sessionId,
+      });
+    } catch (err: any) {
+      console.error("Verify error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/auth/owner-pin
+  app.post("/api/auth/owner-pin", async (req, res) => {
+    try {
+      const { email, pin } = req.body;
+      if (!email || !pin || pin.trim().length < 4) {
+        return res.status(400).json({ error: "Valid email and PIN (at least 4 characters) are required." });
+      }
+      let user = await getUserByEmail(email);
+      if (!user) {
+        user = await createUser(email, "admin", "approved", pin.trim());
+      } else {
+        await updateUserRole(user.id, "admin");
+        await setUserPin(user.id, pin.trim());
+      }
+      const session = await createSession(user.id);
+      res.cookie("waifu_session", session.sessionId, {
+        httpOnly: true,
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+      });
+      const settings = await getUserSettings(user.id);
+      const updatedUser = await getUserById(user.id);
+      return res.json({ status: "ok", message: "System Owner PIN saved successfully!", user: updatedUser, settings });
+    } catch (err: any) {
+      console.error("Owner PIN error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/auth/owner-pin-login
+  app.post("/api/auth/owner-pin-login", async (req, res) => {
+    try {
+      const { email, pin } = req.body;
+      if (!email || !pin) {
+        return res.status(400).json({ error: "Email and PIN are required." });
+      }
+      const cleanEmail = email.trim().toLowerCase();
+      let user = await getUserByEmail(cleanEmail);
+      if (!user) {
+        user = await createUser(cleanEmail, "admin", "approved", pin.trim());
+      } else {
+        if (user.role !== "admin") {
+          await updateUserRole(user.id, "admin");
+        }
+        if (!user.pin) {
+          await setUserPin(user.id, pin.trim());
+        } else if (user.pin !== pin.trim()) {
+          return res.status(401).json({ error: "Incorrect System Owner PIN." });
+        }
+      }
+      const session = await createSession(user.id);
+      res.cookie("waifu_session", session.sessionId, {
+        httpOnly: true,
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+      });
+      const settings = await getUserSettings(user.id);
+      const updatedUser = await getUserById(user.id);
+      return res.json({ status: "ok", user: updatedUser, settings });
+    } catch (err: any) {
+      console.error("Owner PIN login error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/auth/logout
+  app.post("/api/auth/logout", async (req, res) => {
+    try {
+      const sessionId = req.cookies?.waifu_session;
+      if (sessionId) {
+        await deleteSession(sessionId);
+      }
+      res.clearCookie("waifu_session", { path: "/", sameSite: "lax" });
+      return res.json({ status: "ok" });
+    } catch (err: any) {
+      console.error("Logout error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/user/settings
+  app.get("/api/user/settings", async (req, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Unauthorized. Please log in." });
+      }
+      const settings = await getUserSettings(user.id);
+      return res.json({ settings });
+    } catch (err: any) {
+      console.error("Get user settings error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/user/settings
+  app.post("/api/user/settings", async (req, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Unauthorized. Please log in." });
+      }
+      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig } = req.body;
+      await saveUserSettings(user.id, {
+        activeProfileId,
+        waifuProfiles,
+        ttsConfig,
+        sttConfig,
+        openwebuiConfig,
+      });
+      return res.json({ status: "ok", message: "User settings saved to server." });
+    } catch (err: any) {
+      console.error("Save user settings error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin APIs
+  app.get("/api/admin/users", async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden. Admin access required." });
+      }
+      const users = await getAllUsers();
+      return res.json({ users });
+    } catch (err: any) {
+      console.error("Admin list users error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/users/:id/approve", async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden. Admin access required." });
+      }
+      const { id } = req.params;
+      const targetUser = await getUserById(id);
+      if (!targetUser) {
+        return res.status(404).json({ error: "User not found." });
+      }
+
+      await updateUserStatus(id, "approved");
+
+      const { token: magicToken } = await createAuthToken(id, "magic_link");
+      const { token: pinToken } = await createAuthToken(id, "pin");
+      const appUrl = `${req.protocol}://${req.get("host")}`;
+      const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
+
+      const mailRes = await sendMagicLinkEmail(targetUser.email, magicLinkUrl, pinToken);
+
+      return res.json({
+        status: "ok",
+        message: `User ${targetUser.email} approved.`,
+        magicLink: magicLinkUrl,
+        pin: pinToken,
+      });
+    } catch (err: any) {
+      console.error("Approve user error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/users/:id/reject", async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden. Admin access required." });
+      }
+      const { id } = req.params;
+      await updateUserStatus(id, "rejected");
+      return res.json({ status: "ok" });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden. Admin access required." });
+      }
+      const { id } = req.params;
+      if (currentUser.id === id) {
+        return res.status(400).json({ error: "You cannot delete your own admin account." });
+      }
+      await deleteUser(id);
+      return res.json({ status: "ok" });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/users/:id/role", async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden. Admin access required." });
+      }
+      const { id } = req.params;
+      const { role } = req.body;
+      if (role !== "admin" && role !== "user") {
+        return res.status(400).json({ error: "Invalid role." });
+      }
+      await updateUserRole(id, role);
+      return res.json({ status: "ok" });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/smtp", async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden. Admin access required." });
+      }
+      const smtp = await getSmtpConfig();
+      if (!smtp) {
+        return res.json({
+          smtp: {
+            host: "",
+            port: 587,
+            secure: false,
+            authUser: "",
+            authPass: "",
+            fromEmail: "",
+            adminEmail: currentUser.email,
+          },
+        });
+      }
+      return res.json({
+        smtp: {
+          ...smtp,
+          authPass: smtp.authPass ? "••••••••" : "",
+        },
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/smtp", async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden. Admin access required." });
+      }
+      const { host, port, secure, authUser, authPass, fromEmail, adminEmail } = req.body;
+
+      const existing = await getSmtpConfig();
+      const finalPass = authPass === "••••••••" ? (existing?.authPass || "") : authPass;
+
+      await saveSmtpConfig({
+        host: host || "",
+        port: Number(port) || 587,
+        secure: Boolean(secure),
+        authUser: authUser || "",
+        authPass: finalPass || "",
+        fromEmail: fromEmail || "",
+        adminEmail: adminEmail || currentUser.email,
+      });
+
+      return res.json({ status: "ok", message: "SMTP configuration saved." });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/smtp/test", async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden. Admin access required." });
+      }
+      const smtp = await getSmtpConfig();
+      if (!smtp || !smtp.host) {
+        return res.status(400).json({ error: "SMTP server host is not configured." });
+      }
+      await testSmtpConnection(smtp);
+      return res.json({ status: "ok", message: "Test email successfully sent to " + (smtp.adminEmail || currentUser.email) });
+    } catch (err: any) {
+      return res.status(500).json({ error: "SMTP test failed: " + err.message });
+    }
   });
 
   // Local storage directory for extracted Live2D models
