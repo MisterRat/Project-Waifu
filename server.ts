@@ -7,7 +7,6 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import { pipeline, env } from "@xenova/transformers";
 import {
-  getDb,
   getUserByEmail,
   getUserById,
   createUser,
@@ -29,14 +28,10 @@ import {
   saveLive2dZip,
   getAllLive2dZips,
   deleteLive2dZip,
-  incrementFailedLogin,
-  resetFailedLogin,
-  getUserByToken,
 } from "./server/db.js";
 import {
   sendMagicLinkEmail,
   sendAdminPendingUserNotification,
-  sendAccountLockedEmail,
   testSmtpConnection,
 } from "./server/mailer.js";
 
@@ -253,60 +248,6 @@ async function startServer() {
     }
   });
 
-  async function notifyAccountLocked(userEmail: string, req: express.Request) {
-    const user = await getUserByEmail(userEmail);
-    if (!user) return;
-    const { token: unlockToken } = await createAuthToken(user.id, "unlock");
-    const appUrl = `${req.protocol}://${req.get("host")}`;
-    const unlockUrl = `${appUrl}/api/auth/unlock?token=${unlockToken}`;
-
-    const smtp = await getSmtpConfig();
-    let adminEmail = smtp?.adminEmail;
-    if (!adminEmail) {
-      const { db } = await getDb();
-      const stmt = db.prepare("SELECT email FROM users WHERE role = 'admin' LIMIT 1");
-      if (stmt.step()) {
-        adminEmail = stmt.getAsObject().email as string;
-      }
-      stmt.free();
-    }
-
-    await sendAccountLockedEmail(adminEmail || "admin@example.com", userEmail, unlockUrl);
-  }
-
-  // GET /api/auth/unlock
-  app.get("/api/auth/unlock", async (req, res) => {
-    try {
-      const { token } = req.query;
-      if (!token || typeof token !== "string") {
-        return res.status(400).send("<h3>Invalid unlock link.</h3>");
-      }
-      const tokenObj = await verifyAuthToken(token.trim());
-      if (!tokenObj || tokenObj.type !== "unlock") {
-        return res.status(400).send(`
-          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 24px; border: 1px solid #cbd5e1; border-radius: 12px; text-align: center;">
-            <h2 style="color: #ef4444;">Invalid or Expired Unlock Link</h2>
-            <p>This unlock link is invalid or has already been used.</p>
-            <a href="/" style="display: inline-block; margin-top: 16px; background: #0f172a; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none;">Return to Home</a>
-          </div>
-        `);
-      }
-
-      await resetFailedLogin(tokenObj.user_id);
-
-      return res.send(`
-        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 24px; border: 1px solid #cbd5e1; border-radius: 12px; text-align: center; background: #f8fafc;">
-          <h2 style="color: #22c55e;">Account Successfully Unlocked!</h2>
-          <p>The account has been unlocked and the failed login counter has been reset to 0.</p>
-          <a href="/" style="display: inline-block; margin-top: 16px; background: #2563eb; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">Return to Project Waifu</a>
-        </div>
-      `);
-    } catch (err: any) {
-      console.error("Unlock error:", err);
-      return res.status(500).send("Internal server error");
-    }
-  });
-
   // POST /api/auth/verify
   app.post("/api/auth/verify", async (req, res) => {
     try {
@@ -317,14 +258,6 @@ async function startServer() {
 
       const tokenObj = await verifyAuthToken(token.trim());
       if (!tokenObj) {
-        const userId = await getUserByToken(token.trim());
-        if (userId) {
-          const resCount = await incrementFailedLogin(userId);
-          if (resCount.is_locked) {
-            const u = await getUserById(userId);
-            if (u) await notifyAccountLocked(u.email, req);
-          }
-        }
         return res.status(400).json({ error: "Invalid or expired login token / PIN." });
       }
 
@@ -332,12 +265,6 @@ async function startServer() {
       if (!user || user.status !== "approved") {
         return res.status(403).json({ error: "User account is not active or approved." });
       }
-
-      if (user.is_locked) {
-        return res.status(403).json({ error: "This account is locked due to multiple failed login attempts. Please use the unlock link sent to the admin email." });
-      }
-
-      await resetFailedLogin(user.id);
 
       const session = await createSession(user.id);
       res.cookie("waifu_session", session.sessionId, {
@@ -373,7 +300,6 @@ async function startServer() {
         await updateUserRole(user.id, "admin");
         await setUserPin(user.id, pin.trim());
       }
-      await resetFailedLogin(user.id);
       const session = await createSession(user.id);
       res.cookie("waifu_session", session.sessionId, {
         httpOnly: true,
@@ -401,25 +327,16 @@ async function startServer() {
       if (!user) {
         user = await createUser(cleanEmail, "admin", "approved", pin.trim());
       } else {
-        if (user.is_locked) {
-          return res.status(403).json({ error: "This account is locked due to multiple failed login attempts. Please use the unlock link sent to the admin email." });
-        }
         if (user.role !== "admin") {
           await updateUserRole(user.id, "admin");
         }
         if (!user.pin) {
           await setUserPin(user.id, pin.trim());
         } else if (user.pin !== pin.trim()) {
-          const resCount = await incrementFailedLogin(user.id);
-          if (resCount.is_locked) {
-            await notifyAccountLocked(user.email, req);
-            return res.status(403).json({ error: "Account locked due to 10 failed login attempts. An unlock link has been sent to the admin email." });
-          }
           await new Promise(resolve => setTimeout(resolve, 10000));
-          return res.status(401).json({ error: `Incorrect System Owner PIN. Failed attempts: ${resCount.failed_login_count}/10. Paused for 10 seconds.` });
+          return res.status(401).json({ error: "Incorrect System Owner PIN. Paused for 10 seconds." });
         }
       }
-      await resetFailedLogin(user.id);
       const session = await createSession(user.id);
       res.cookie("waifu_session", session.sessionId, {
         httpOnly: true,
