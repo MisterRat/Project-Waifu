@@ -575,15 +575,8 @@ async function startServer() {
     }
   });
 
-  // Local storage directory for extracted Live2D models (persistent across applet updates)
-  let MODELS_DIR = path.join(process.cwd(), "uploads", "models");
-  try {
-    const parentUploads = path.resolve(process.cwd(), "../uploads", "models");
-    const parentBase = path.resolve(process.cwd(), "..");
-    if (fs.existsSync(parentBase)) {
-      MODELS_DIR = parentUploads;
-    }
-  } catch (e) {}
+  const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+  const MODELS_DIR = path.join(DATA_DIR, "models");
 
   if (!fs.existsSync(MODELS_DIR)) {
     fs.mkdirSync(MODELS_DIR, { recursive: true });
