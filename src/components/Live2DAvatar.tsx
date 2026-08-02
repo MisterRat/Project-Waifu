@@ -362,6 +362,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     let isSubscribed = true;
     let app: any = null;
     let model: any = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     const loadPixiModel = async () => {
       setLive2dStatus("loading");
@@ -490,6 +491,16 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         model.y = finalY;
         setZoomLevel(finalScale);
 
+        // Add ResizeObserver for horizontal centering
+        resizeObserver = new ResizeObserver((entries) => {
+          if (model && entries[0].contentRect.width > 0) {
+            model.x = entries[0].contentRect.width / 2;
+          }
+        });
+        if (displayAreaRef.current) {
+          resizeObserver.observe(displayAreaRef.current);
+        }
+
         live2dModelRef.current = model;
         pixiAppRef.current = app;
 
@@ -510,6 +521,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
     return () => {
       isSubscribed = false;
+      if (resizeObserver) resizeObserver.disconnect();
       if (model) {
         try {
           model.destroy();
