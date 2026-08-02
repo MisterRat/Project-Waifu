@@ -1031,72 +1031,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     return () => cancelAnimationFrame(animFrameId);
   }, [mousePos, mouthOpenRatio, emotion, outfitColor, live2dStatus, isSpeaking]);
 
-  const emotionList: { id: EmotionType; label: string; icon: React.ReactNode; color: string }[] = [
-    {
-      id: "happy",
-      label: "Happy",
-      icon: <Smile className="w-3.5 h-3.5" />,
-      color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
-    },
-    {
-      id: "blush",
-      label: "Blush",
-      icon: <Heart className="w-3.5 h-3.5" />,
-      color: "bg-pink-500/20 text-pink-300 border-pink-500/40",
-    },
-    {
-      id: "excited",
-      label: "Excited",
-      icon: <Sparkles className="w-3.5 h-3.5" />,
-      color: "bg-amber-500/20 text-amber-300 border-amber-500/40",
-    },
-    {
-      id: "surprised",
-      label: "Surprised",
-      icon: <Zap className="w-3.5 h-3.5" />,
-      color: "bg-purple-500/20 text-purple-300 border-purple-500/40",
-    },
-    {
-      id: "thinking",
-      label: "Thinking",
-      icon: <HelpCircle className="w-3.5 h-3.5" />,
-      color: "bg-blue-500/20 text-blue-300 border-blue-500/40",
-    },
-    {
-      id: "sad",
-      label: "Sad",
-      icon: <Frown className="w-3.5 h-3.5" />,
-      color: "bg-indigo-500/20 text-indigo-300 border-indigo-500/40",
-    },
-    {
-      id: "angry",
-      label: "Angry",
-      icon: <Flame className="w-3.5 h-3.5" />,
-      color: "bg-rose-500/20 text-rose-300 border-rose-500/40",
-    },
-    {
-      id: "wink",
-      label: "Wink",
-      icon: <Eye className="w-3.5 h-3.5" />,
-      color: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40",
-    },
-    {
-      id: "neutral",
-      label: "Neutral",
-      icon: <MinusCircle className="w-3.5 h-3.5" />,
-      color: "bg-slate-500/20 text-slate-300 border-slate-500/40",
-    },
-  ];
-
-  const motionList: { id: MotionType; label: string; icon: React.ReactNode }[] = [
-    { id: "nod", label: "Nod", icon: <Activity className="w-3 h-3 text-emerald-400" /> },
-    { id: "wave", label: "Wave", icon: <Hand className="w-3 h-3 text-blue-400" /> },
-    { id: "shake", label: "Shake", icon: <RotateCw className="w-3 h-3 text-amber-400" /> },
-    { id: "bow", label: "Bow", icon: <Bot className="w-3 h-3 text-violet-400" /> },
-    { id: "laugh", label: "Laugh", icon: <Sparkles className="w-3 h-3 text-pink-400" /> },
-    { id: "wink", label: "Wink", icon: <Eye className="w-3 h-3 text-cyan-400" /> },
-  ];
-
   return (
     <div
       ref={containerRef}
@@ -1207,57 +1141,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-violet-400" />
             <span>Expression: [{emotion}]</span>
           </span>
-        </div>
-
-        {/* Quick Motion & Expression Manual Trigger Overlay */}
-        <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5 z-20 pointer-events-auto">
-          <div className="bg-slate-950/90 border border-slate-800/80 rounded-2xl p-2 backdrop-blur shadow-xl space-y-1.5 max-w-[260px]">
-            <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider flex items-center justify-between">
-              <span>Quick Expressions</span>
-            </div>
-            <div className="flex flex-wrap gap-1 max-h-[70px] overflow-y-auto pr-1">
-              {emotionList.map((item) => {
-                const isActive = emotion === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => onEmotionChange?.(item.id)}
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-medium flex items-center gap-1 transition border ${
-                      isActive
-                        ? "bg-violet-600 text-white border-violet-400 shadow-sm"
-                        : "bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200"
-                    }`}
-                  >
-                    {item.icon}
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider pt-1 border-t border-slate-800/80">
-              <span>Realtime Motion Gestures</span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {motionList.map((m) => {
-                const isActive = activeMotion === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => triggerMotion(m.id)}
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-medium flex items-center gap-1 transition border ${
-                      isActive
-                        ? "bg-emerald-600 text-white border-emerald-400 shadow-sm"
-                        : "bg-slate-900 text-slate-400 border-slate-800 hover:text-emerald-300"
-                    }`}
-                  >
-                    {m.icon}
-                    <span>[{m.label}]</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
         {/* Lip-Sync Waveform Indicator */}
