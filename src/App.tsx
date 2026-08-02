@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile, User } from "./types";
+import { OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile, User, EmotionType, MotionType } from "./types";
 import { OpenWebUITester } from "./components/OpenWebUITester";
 import { VoicePipelineTester } from "./components/VoicePipelineTester";
 import { DebugLogViewer } from "./components/DebugLogViewer";
@@ -125,6 +125,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"chat" | "persona" | "openwebui" | "voice" | "debug-log">("chat");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [currentEmotion, setCurrentEmotion] = useState<EmotionType>("happy");
+  const [currentMotion, setCurrentMotion] = useState<MotionType>("none");
   const handleDebugLog = (msg: string) => setDebugLogs(prev => [...prev, msg]);
 
   const [profiles, setProfiles] = useState<WaifuProfile[]>(loadWaifuProfiles);
@@ -132,7 +134,7 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userCount, setUserCount] = useState<number>(0);
-  const [appVersion, setAppVersion] = useState<string>("v0.50 Beta");
+  const [appVersion, setAppVersion] = useState<string>("v0.6.0 Beta");
   const [authLoaded, setAuthLoaded] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
@@ -760,6 +762,8 @@ export default function App() {
             onTTSChange={setTTSConfig}
             onSTTChange={setSTTConfig}
             onMicStatusChange={setMicStatus}
+            onEmotionChange={setCurrentEmotion}
+            onMotionChange={setCurrentMotion}
             onUpdateSystemPrompt={(newPrompt) => {
               setOpenWebUIConfig((prev) => ({ ...prev, systemPrompt: newPrompt }));
             }}
@@ -838,8 +842,10 @@ export default function App() {
           <span>PID: 12480</span>
           <span>LATENCY: 42ms</span>
         </div>
-        <div className="hidden sm:block italic font-serif">
-          "Intelligence is the ability to adapt to change." — Project Waifu
+        <div className="flex items-center space-x-3 text-[11px] font-mono">
+          <span className="text-slate-400 font-semibold">EXPRESSION: <span className="text-violet-300 font-bold uppercase">[{currentEmotion}]</span></span>
+          <span className="text-slate-600">|</span>
+          <span className="text-slate-400 font-semibold">MOTION: <span className={currentMotion !== "none" ? "text-emerald-400 font-bold uppercase animate-pulse" : "text-slate-400 uppercase"}>[{currentMotion}]</span></span>
         </div>
         <div>FastAPI • Live2D • OpenWebUI</div>
       </footer>

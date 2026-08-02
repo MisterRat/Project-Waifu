@@ -34,6 +34,8 @@ interface ChatConsoleProps {
   onUpdateSystemPrompt?: (newPrompt: string) => void;
   onDebugLog?: (msg: string) => void;
   onMicStatusChange?: (status: { isListening: boolean; isTranscribing: boolean; toggleListening: () => void }) => void;
+  onEmotionChange?: (emo: EmotionType) => void;
+  onMotionChange?: (mo: MotionType) => void;
 }
 
 export const ChatConsole: React.FC<ChatConsoleProps> = ({
@@ -53,6 +55,8 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   onUpdateSystemPrompt,
   onDebugLog,
   onMicStatusChange,
+  onEmotionChange,
+  onMotionChange,
 }) => {
   const [localProfiles, setLocalProfiles] = useState<WaifuProfile[]>(loadWaifuProfiles);
   const [localActiveProfileId, setLocalActiveProfileId] = useState<string>(getActiveWaifuId);
@@ -70,6 +74,21 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   const [input, setInput] = useState("");
   const [currentEmotion, setCurrentEmotion] = useState<EmotionType>("happy");
   const [currentMotion, setCurrentMotion] = useState<MotionType>("none");
+
+  const handleEmotionChange = (emo: EmotionType) => {
+    setCurrentEmotion(emo);
+    if (onEmotionChange) onEmotionChange(emo);
+  };
+
+  const handleMotionChange = (mo: MotionType) => {
+    setCurrentMotion(mo);
+    if (onMotionChange) onMotionChange(mo);
+  };
+
+  useEffect(() => {
+    if (onEmotionChange) onEmotionChange(currentEmotion);
+    if (onMotionChange) onMotionChange(currentMotion);
+  }, []);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audioVolume, setAudioVolume] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -718,8 +737,8 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         confetti({ particleCount: 40, spread: 60, origin: { y: 0.7 } });
       }
 
-      setCurrentEmotion(newEmotion);
-      setCurrentMotion(newMotion);
+      handleEmotionChange(newEmotion);
+      handleMotionChange(newMotion);
 
       const waifuMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -807,8 +826,8 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
                 live2dModelUrl: newUrl,
               });
             }}
-            onEmotionChange={(emo) => setCurrentEmotion(emo)}
-            onMotionTrigger={(mo) => setCurrentMotion(mo)}
+            onEmotionChange={(emo) => handleEmotionChange(emo)}
+            onMotionTrigger={(mo) => handleMotionChange(mo)}
             audioVolume={audioVolume}
           />
         </div>

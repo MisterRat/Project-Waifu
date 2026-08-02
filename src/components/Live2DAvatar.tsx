@@ -707,6 +707,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             if (elapsed >= duration) {
               setActiveMotion("none");
               motionStartTimeRef.current = null;
+              if (onMotionTrigger) {
+                onMotionTrigger("none");
+              }
             } else {
               const progress = elapsed / duration;
               const pRad = progress * Math.PI;
