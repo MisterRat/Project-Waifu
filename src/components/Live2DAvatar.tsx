@@ -213,8 +213,26 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
         } catch (e) {}
       }
+    } else if (motion === "none") {
+      setActiveMotion("none");
+      motionStartTimeRef.current = null;
     }
   }, [motion]);
+
+  // 5-second auto-expiration timer for active motions
+  useEffect(() => {
+    if (activeMotion && activeMotion !== "none") {
+      motionStartTimeRef.current = Date.now();
+      const resetTimer = setTimeout(() => {
+        setActiveMotion("none");
+        motionStartTimeRef.current = null;
+        if (onMotionTrigger) {
+          onMotionTrigger("none");
+        }
+      }, 5000);
+      return () => clearTimeout(resetTimer);
+    }
+  }, [activeMotion]);
 
   const triggerMotion = (m: MotionType) => {
     setActiveMotion(m);
@@ -341,6 +359,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               if (targetGroup) {
                 motionMgr.startMotion(targetGroup, 0, 2);
                 methodBTriggered = true;
+                triggerMotion(randomMotion);
                 addDebugLog(`[Extended Idle] Executed Method B motion3 from group "${targetGroup}"`);
               }
             }
