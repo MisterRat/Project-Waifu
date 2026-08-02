@@ -92,6 +92,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         localStorage.setItem("waifu_avatar_size", JSON.stringify(newSize));
       } catch (e) {}
     }
+    if (live2dModelRef.current && displayAreaRef.current) {
+      const containerW = displayAreaRef.current.clientWidth;
+      if (containerW > 0) {
+        live2dModelRef.current.x = containerW / 2;
+      }
+    }
   };
 
   const [isDraggingWindow, setIsDraggingWindow] = useState(false);
@@ -132,6 +138,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         x: dragRef.current.initialX + dx,
         y: dragRef.current.initialY + dy,
       });
+      if (live2dModelRef.current && displayAreaRef.current) {
+        const containerW = displayAreaRef.current.clientWidth;
+        if (containerW > 0) {
+          live2dModelRef.current.x = containerW / 2;
+        }
+      }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
@@ -143,6 +155,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         x: dragRef.current.initialX + dx,
         y: dragRef.current.initialY + dy,
       });
+      if (live2dModelRef.current && displayAreaRef.current) {
+        const containerW = displayAreaRef.current.clientWidth;
+        if (containerW > 0) {
+          live2dModelRef.current.x = containerW / 2;
+        }
+      }
     };
 
     const handleMouseUp = () => {
@@ -259,15 +277,17 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     setMousePos({ x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) });
 
     if (isPanningRef.current && live2dModelRef.current) {
-      const dx = e.clientX - dragStartRef.current.x;
       const dy = e.clientY - dragStartRef.current.y;
-      live2dModelRef.current.x = dragStartRef.current.modelX + dx;
+      const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
+      live2dModelRef.current.x = containerW / 2;
       live2dModelRef.current.y = dragStartRef.current.modelY + dy;
       onTransformChange?.(live2dModelRef.current.scale.x, live2dModelRef.current.x, live2dModelRef.current.y);
     } else if (isZoomingRef.current && live2dModelRef.current) {
       const dy = zoomStartRef.current.y - e.clientY;
       const scaleFactor = Math.pow(1.01, dy);
       const newScale = Math.max(0.05, Math.min(10.0, zoomStartRef.current.scale * scaleFactor));
+      const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
+      live2dModelRef.current.x = containerW / 2;
       live2dModelRef.current.scale.set(newScale);
       setZoomLevel(newScale);
       onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
@@ -317,9 +337,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const handleTouchMoveCanvas = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 1 && isPanningRef.current && live2dModelRef.current) {
       const touch = e.touches[0];
-      const dx = touch.clientX - dragStartRef.current.x;
       const dy = touch.clientY - dragStartRef.current.y;
-      live2dModelRef.current.x = dragStartRef.current.modelX + dx;
+      const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
+      live2dModelRef.current.x = containerW / 2;
       live2dModelRef.current.y = dragStartRef.current.modelY + dy;
       onTransformChange?.(live2dModelRef.current.scale.x, live2dModelRef.current.x, live2dModelRef.current.y);
     } else if (e.touches.length === 2 && isZoomingRef.current && live2dModelRef.current) {
@@ -329,6 +349,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       if (touchStartRef.current.distance > 0) {
         const factor = dist / touchStartRef.current.distance;
         const newScale = Math.max(0.05, Math.min(10.0, touchStartRef.current.scale * factor));
+        const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
+        live2dModelRef.current.x = containerW / 2;
         live2dModelRef.current.scale.set(newScale);
         setZoomLevel(newScale);
         onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
@@ -347,6 +369,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     const currentScale = live2dModelRef.current.scale.x;
     const scaleFactor = e.deltaY < 0 ? 1.1 : 0.9;
     const newScale = Math.max(0.05, Math.min(10.0, currentScale * scaleFactor));
+    const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
+    live2dModelRef.current.x = containerW / 2;
     live2dModelRef.current.scale.set(newScale);
     setZoomLevel(newScale);
     onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
@@ -482,8 +506,13 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           fitScale = 0.25;
         }
 
+        if (model.anchor && typeof model.anchor.set === "function") {
+          model.anchor.set(0.5, 0.5);
+        }
+
         const finalScale = (initialScale !== undefined && !isNaN(initialScale) && initialScale > 0) ? initialScale : fitScale;
-        const finalX = (initialX !== undefined && !isNaN(initialX)) ? initialX : (width / 2);
+        const containerW = displayAreaRef.current?.clientWidth || width;
+        const finalX = containerW / 2;
         const finalY = (initialY !== undefined && !isNaN(initialY)) ? initialY : (height / 2 + 15);
 
         model.scale.set(finalScale);
@@ -491,13 +520,13 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         model.y = finalY;
         setZoomLevel(finalScale);
 
-        // Add ResizeObserver for horizontal centering
+        // Add ResizeObserver for horizontal centering in container
         resizeObserver = new ResizeObserver((entries) => {
           if (model && app && entries[0].contentRect.width > 0) {
-            const width = entries[0].contentRect.width;
-            const height = entries[0].contentRect.height;
-            app.renderer.resize(width, height);
-            model.x = width / 2;
+            const containerWidth = entries[0].contentRect.width;
+            const containerHeight = entries[0].contentRect.height;
+            app.renderer.resize(containerWidth, containerHeight);
+            model.x = containerWidth / 2;
           }
         });
         if (displayAreaRef.current) {

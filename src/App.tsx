@@ -132,7 +132,7 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userCount, setUserCount] = useState<number>(0);
-  const [appVersion, setAppVersion] = useState<string>("0.2.0 Alpha");
+  const [appVersion, setAppVersion] = useState<string>("v0.50 Beta");
   const [authLoaded, setAuthLoaded] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
@@ -151,7 +151,7 @@ export default function App() {
       if (res.ok) {
         setUserCount(data.userCount || 0);
         if (data.version) {
-          setAppVersion(`v${data.version} Alpha`);
+          setAppVersion(`v${data.version}`);
         }
         if (data.user) {
           setCurrentUser(data.user);
@@ -839,7 +839,7 @@ export default function App() {
           <span>LATENCY: 42ms</span>
         </div>
         <div className="hidden sm:block italic font-serif">
-          "Intelligence is the ability to adapt to change." — Project Waifu Alpha Branch
+          "Intelligence is the ability to adapt to change." — Project Waifu
         </div>
         <div>FastAPI • Live2D • OpenWebUI</div>
       </footer>
