@@ -493,8 +493,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         // Add ResizeObserver for horizontal centering
         resizeObserver = new ResizeObserver((entries) => {
-          if (model && entries[0].contentRect.width > 0) {
-            model.x = entries[0].contentRect.width / 2;
+          if (model && app && entries[0].contentRect.width > 0) {
+            const width = entries[0].contentRect.width;
+            const height = entries[0].contentRect.height;
+            app.renderer.resize(width, height);
+            model.x = width / 2;
           }
         });
         if (displayAreaRef.current) {
