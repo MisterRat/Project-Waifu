@@ -137,6 +137,9 @@ async function startServer() {
       const isFirst = count === 0;
 
       if (user) {
+        if (user.role === "admin") {
+          return res.status(400).json({ error: "Administrator accounts cannot request magic links. Please sign in using your System Owner PIN." });
+        }
         if (user.status === "pending") {
           return res.json({
             status: "pending",
@@ -146,20 +149,25 @@ async function startServer() {
         if (user.status === "rejected") {
           return res.status(403).json({ error: "Account registration was not approved." });
         }
-        // If already approved, issue magic link directly
+
+        // Existing approved user requesting magic link
+        const smtp = await getSmtpConfig();
+        if (!smtp || !smtp.host) {
+          return res.status(400).json({ error: "SMTP email service is not configured by the Administrator. Magic links cannot be sent." });
+        }
+
         const { token: magicToken } = await createAuthToken(user.id, "magic_link");
         const appUrl = `${req.protocol}://${req.get("host")}`;
         const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
 
         const mailRes = await sendMagicLinkEmail(cleanEmail, magicLinkUrl);
+        if (!mailRes.sent) {
+          return res.status(500).json({ error: `Failed to send Magic Link email via SMTP: ${mailRes.error || mailRes.reason || "Delivery failed"}. Please contact your administrator.` });
+        }
 
         return res.json({
           status: "approved",
-          message: mailRes.sent 
-            ? "Magic Link sent to your email (and available below)."
-            : "Magic Link generated.",
-          magicLink: magicLinkUrl,
-          pin: null,
+          message: "Magic Link sent to your email address! Please check your inbox.",
         });
       }
 
@@ -168,19 +176,33 @@ async function startServer() {
       const status = isFirst ? "approved" : "pending";
       user = await createUser(cleanEmail, role, status);
 
+      if (role === "admin") {
+        return res.json({
+          status: "approved",
+          isFirstUser: true,
+          message: "System Owner account initialized! Please set your Owner PIN.",
+        });
+      }
+
       if (status === "approved") {
+        const smtp = await getSmtpConfig();
+        if (!smtp || !smtp.host) {
+          return res.status(400).json({ error: "SMTP email service is not configured by the Administrator. Magic links cannot be sent." });
+        }
+
         const { token: magicToken } = await createAuthToken(user.id, "magic_link");
         const appUrl = `${req.protocol}://${req.get("host")}`;
         const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
 
         const mailRes = await sendMagicLinkEmail(cleanEmail, magicLinkUrl);
+        if (!mailRes.sent) {
+          return res.status(500).json({ error: `Failed to send Magic Link email via SMTP: ${mailRes.error || mailRes.reason || "Delivery failed"}. Please contact your administrator.` });
+        }
 
         return res.json({
           status: "approved",
-          isFirstUser: isFirst,
-          message: isFirst ? "Account created as Administrator! Magic link generated." : "Account created! Magic link generated.",
-          magicLink: magicLinkUrl,
-          pin: null,
+          isFirstUser: false,
+          message: "Account created! Magic link sent to your email address.",
         });
       } else {
         const appUrl = `${req.protocol}://${req.get("host")}`;
@@ -221,6 +243,10 @@ async function startServer() {
         return res.status(404).json({ error: "No account found for this email. Please register first." });
       }
 
+      if (user.role === "admin") {
+        return res.status(400).json({ error: "Administrator accounts cannot request magic links. Please sign in using your System Owner PIN." });
+      }
+
       if (user.status === "pending") {
         return res.status(403).json({ error: "Your account is pending approval by the Administrator." });
       }
@@ -229,18 +255,22 @@ async function startServer() {
         return res.status(403).json({ error: "Your account request was declined." });
       }
 
+      const smtp = await getSmtpConfig();
+      if (!smtp || !smtp.host) {
+        return res.status(400).json({ error: "SMTP email service is not configured by the Administrator. Magic links cannot be sent." });
+      }
+
       const { token: magicToken } = await createAuthToken(user.id, "magic_link");
       const appUrl = `${req.protocol}://${req.get("host")}`;
       const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
 
       const mailRes = await sendMagicLinkEmail(cleanEmail, magicLinkUrl);
+      if (!mailRes.sent) {
+        return res.status(500).json({ error: `Failed to send Magic Link email via SMTP: ${mailRes.error || mailRes.reason || "Delivery failed"}. Please contact your administrator.` });
+      }
 
       return res.json({
-        message: mailRes.sent 
-          ? "Magic link sent to your email (and available below)!"
-          : "Magic link generated.",
-        magicLink: magicLinkUrl,
-        pin: null,
+        message: "Magic link sent to your email address! Please check your inbox.",
       });
     } catch (err: any) {
       console.error("Login error:", err);
@@ -433,6 +463,21 @@ async function startServer() {
 
       await updateUserStatus(id, "approved");
 
+      if (targetUser.role === "admin") {
+        return res.json({
+          status: "ok",
+          message: `User ${targetUser.email} approved as Administrator.`,
+        });
+      }
+
+      const smtp = await getSmtpConfig();
+      if (!smtp || !smtp.host) {
+        return res.json({
+          status: "ok",
+          message: `User ${targetUser.email} approved. Note: SMTP is not configured, so no magic link email was sent.`,
+        });
+      }
+
       const { token: magicToken } = await createAuthToken(id, "magic_link");
       const appUrl = `${req.protocol}://${req.get("host")}`;
       const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
@@ -441,9 +486,9 @@ async function startServer() {
 
       return res.json({
         status: "ok",
-        message: `User ${targetUser.email} approved.`,
-        magicLink: magicLinkUrl,
-        pin: null,
+        message: mailRes.sent
+          ? `User ${targetUser.email} approved and magic link emailed.`
+          : `User ${targetUser.email} approved, but failed to send magic link email: ${mailRes.error || mailRes.reason}`,
       });
     } catch (err: any) {
       console.error("Approve user error:", err);

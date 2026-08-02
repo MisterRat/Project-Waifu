@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { User } from "../types";
-import { Mail, Key, ShieldCheck, UserCheck, AlertCircle, Sparkles, LogOut, CheckCircle2, ArrowRight, Loader2, X, Lock } from "lucide-react";
+import { Mail, Key, ShieldCheck, AlertCircle, Sparkles, LogOut, CheckCircle2, ArrowRight, Loader2, X, Lock } from "lucide-react";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -26,7 +26,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [step, setStep] = useState<"email" | "verify">("email");
 
   useEffect(() => {
@@ -53,7 +52,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
     setError(null);
     setMessage(null);
-    setGeneratedLink(null);
 
     try {
       const res = await fetch("/api/auth/register", {
@@ -72,8 +70,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setMessage(data.message || "Registration submitted! An Administrator will review your account request.");
         setStep("email");
       } else {
-        setMessage(data.message || "Magic link generated!");
-        if (data.magicLink) setGeneratedLink(data.magicLink);
+        setMessage(data.message || "Magic Link sent to your email! Please check your inbox and click the link to sign in.");
         setStep("verify");
       }
     } catch (err: any) {
@@ -248,7 +245,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <div className="p-3 bg-amber-950/30 border border-amber-800/40 rounded-xl text-xs text-amber-200/90 flex items-start gap-2.5 mb-2">
                   <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <div>
-                    <strong className="font-semibold text-amber-300">System Owner Setup:</strong> SMTP is not configured yet. Set your persistent owner PIN for instant server access.
+                    <strong className="font-semibold text-amber-300">System Owner Setup:</strong> Set your persistent owner PIN to initialize system administrator access.
                   </div>
                 </div>
               )}
@@ -386,25 +383,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </form>
                   ) : (
                     <div className="space-y-4">
-                      {generatedLink && (
-                        <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
-                          <div className="text-xs text-slate-300">
-                            🔑 <strong>Direct Access Magic Link (SMTP Not Configured):</strong>
-                          </div>
-                          <button
-                            onClick={() => {
-                              const urlParams = new URLSearchParams(generatedLink.split("?")[1]);
-                              const token = urlParams.get("token");
-                              if (token) handleVerifyToken(token);
-                            }}
-                            className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 rounded-xl text-xs transition cursor-pointer"
-                          >
-                            <UserCheck className="w-4 h-4" />
-                            <span>Instant One-Click Login</span>
-                          </button>
-                        </div>
-                      )}
-
                       <div>
                         <label className="block text-xs font-mono text-slate-300 mb-1.5">
                           Enter Magic Token

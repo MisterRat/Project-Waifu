@@ -24,8 +24,10 @@ export async function sendMagicLinkEmail(toEmail: string, magicLink: string) {
 
     const subject = "Your Magic Link for Project Waifu";
 
+    const senderAddress = smtp.fromEmail?.trim() || smtp.authUser?.trim() || `"Project Waifu" <no-reply@${smtp.host}>`;
+
     const info = await transporter.sendMail({
-      from: smtp.fromEmail || `"Project Waifu" <no-reply@${smtp.host}>`,
+      from: senderAddress,
       to: toEmail,
       subject,
       html: `
@@ -65,8 +67,10 @@ export async function sendAdminPendingUserNotification(userEmail: string, appUrl
       tls: { rejectUnauthorized: false },
     });
 
+    const senderAddress = smtp.fromEmail?.trim() || smtp.authUser?.trim() || `"Project Waifu Admin" <no-reply@${smtp.host}>`;
+
     await transporter.sendMail({
-      from: smtp.fromEmail || `"Project Waifu Admin" <no-reply@${smtp.host}>`,
+      from: senderAddress,
       to: smtp.adminEmail,
       subject: `[Project Waifu] New User Approval Required: ${userEmail}`,
       html: `
