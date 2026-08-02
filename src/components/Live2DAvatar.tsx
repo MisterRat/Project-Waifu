@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { EmotionType } from "../types";
+import { EmotionType, MotionType } from "../types";
 import { loadLive2DFromZip, resolveLive2DModelUrl } from "../lib/live2dZipLoader";
 import {
   Sparkles,
@@ -16,15 +16,23 @@ import {
   Upload,
   Bot,
   AlertCircle,
+  Flame,
+  MinusCircle,
+  Eye,
+  Activity,
+  Hand,
+  RotateCw,
 } from "lucide-react";
 
 interface Live2DAvatarProps {
   emotion: EmotionType;
+  motion?: MotionType;
   isSpeaking: boolean;
   characterName: string;
   modelUrl?: string;
   onModelUrlChange?: (newUrl: string) => void;
   onEmotionChange?: (emotion: EmotionType) => void;
+  onMotionTrigger?: (motion: MotionType) => void;
   audioVolume?: number;
   onDebugLog?: (msg: string) => void;
   initialScale?: number;
@@ -35,11 +43,13 @@ interface Live2DAvatarProps {
 
 export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   emotion,
+  motion = "none",
   isSpeaking,
   characterName,
   modelUrl,
   onModelUrlChange,
   onEmotionChange,
+  onMotionTrigger,
   audioVolume = 0,
   onDebugLog,
   initialScale,
@@ -185,6 +195,44 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     };
   }, [isDraggingWindow]);
   const [mouthOpenRatio, setMouthOpenRatio] = useState(0);
+  const [activeMotion, setActiveMotion] = useState<MotionType>(motion || "none");
+  const motionStartTimeRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (motion && motion !== "none") {
+      setActiveMotion(motion);
+      motionStartTimeRef.current = Date.now();
+
+      if (live2dModelRef.current) {
+        try {
+          const model = live2dModelRef.current;
+          if (typeof model.motion === "function") {
+            model.motion(motion);
+          } else if (model.internalModel?.motionManager) {
+            model.internalModel.motionManager.startMotion(motion, 0, 2);
+          }
+        } catch (e) {}
+      }
+    }
+  }, [motion]);
+
+  const triggerMotion = (m: MotionType) => {
+    setActiveMotion(m);
+    motionStartTimeRef.current = Date.now();
+    if (onMotionTrigger) {
+      onMotionTrigger(m);
+    }
+    if (live2dModelRef.current) {
+      try {
+        const model = live2dModelRef.current;
+        if (typeof model.motion === "function") {
+          model.motion(m);
+        } else if (model.internalModel?.motionManager) {
+          model.internalModel.motionManager.startMotion(m, 0, 2);
+        }
+      } catch (e) {}
+    }
+  };
   const [outfitColor, setOutfitColor] = useState<"pink" | "blue" | "purple" | "emerald">("pink");
   const [showCustomModelModal, setShowCustomModelModal] = useState(false);
   const [customModelUrl, setCustomModelUrl] = useState(modelUrl || "");
@@ -569,7 +617,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     };
   }, [customModelUrl]);
 
-  // Update Live2D Parameters in Realtime (mouth open, head angle, eye tracking)
+  // Update Live2D Parameters in Realtime (mouth open, expressions, motions, head angle, eye tracking)
   useEffect(() => {
     if (live2dStatus === "active" && live2dModelRef.current) {
       const model = live2dModelRef.current;
@@ -577,30 +625,173 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
       if (core) {
         try {
-          // Lip sync mouth opening
-          if (typeof core.setParameterValueById === "function") {
-            const effectiveX = isSpeaking ? 0 : mousePos.x;
-            const effectiveY = isSpeaking ? 0 : mousePos.y;
-            core.setParameterValueById("ParamMouthOpenY", mouthOpenRatio);
-            core.setParameterValueById("ParamAngleX", effectiveX * 25);
-            core.setParameterValueById("ParamAngleY", -effectiveY * 20);
-            core.setParameterValueById("ParamEyeBallX", effectiveX);
-            core.setParameterValueById("ParamEyeBallY", -effectiveY);
+          const effectiveX = isSpeaking ? 0 : mousePos.x;
+          const effectiveY = isSpeaking ? 0 : mousePos.y;
 
-            if (emotion === "sad") {
-              core.setParameterValueById("ParamBrowLY", -0.5);
-              core.setParameterValueById("ParamBrowRY", -0.5);
-            } else if (emotion === "excited" || emotion === "surprised") {
-              core.setParameterValueById("ParamEyeLOpen", 1.2);
-              core.setParameterValueById("ParamEyeROpen", 1.2);
+          // Compute real-time body motion gesture offsets
+          let motionAngleX = 0;
+          let motionAngleY = 0;
+          let motionAngleZ = 0;
+          let motionBodyAngleZ = 0;
+          let motionMouthOpen = 0;
+          let motionEyeLOpenOverride: number | null = null;
+
+          if (activeMotion !== "none" && motionStartTimeRef.current) {
+            const elapsed = (Date.now() - motionStartTimeRef.current) / 1000;
+            const duration = 1.0;
+            if (elapsed >= duration) {
+              setActiveMotion("none");
+              motionStartTimeRef.current = null;
+            } else {
+              const progress = elapsed / duration;
+              const pRad = progress * Math.PI;
+
+              switch (activeMotion) {
+                case "nod":
+                  motionAngleY = Math.sin(progress * Math.PI * 2) * 18;
+                  break;
+                case "shake":
+                  motionAngleX = Math.sin(progress * Math.PI * 3) * 22;
+                  break;
+                case "wave":
+                  motionAngleZ = Math.sin(progress * Math.PI * 2) * 16;
+                  motionBodyAngleZ = Math.sin(progress * Math.PI * 2) * 8;
+                  break;
+                case "bow":
+                  motionAngleY = -Math.sin(pRad) * 25;
+                  break;
+                case "laugh":
+                  motionAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 12;
+                  motionMouthOpen = 0.4;
+                  break;
+                case "wink":
+                  if (progress < 0.75) {
+                    motionEyeLOpenOverride = 0;
+                  }
+                  break;
+              }
             }
           }
+
+          // Evaluate emotion parameters
+          let mouthForm = 0;
+          let cheekBlush = 0;
+          let browLY = 0;
+          let browRY = 0;
+          let browAngle = 0;
+          let eyeLOpen = 1.0;
+          let eyeROpen = 1.0;
+
+          switch (emotion) {
+            case "happy":
+              mouthForm = 1.0;
+              cheekBlush = 0.3;
+              browLY = 0.2;
+              browRY = 0.2;
+              break;
+            case "blush":
+              mouthForm = 0.8;
+              cheekBlush = 1.0;
+              browLY = 0.1;
+              browRY = 0.1;
+              break;
+            case "excited":
+              mouthForm = 1.0;
+              cheekBlush = 0.8;
+              eyeLOpen = 1.3;
+              eyeROpen = 1.3;
+              browLY = 0.6;
+              browRY = 0.6;
+              break;
+            case "surprised":
+              mouthForm = 0.0;
+              eyeLOpen = 1.4;
+              eyeROpen = 1.4;
+              browLY = 0.8;
+              browRY = 0.8;
+              break;
+            case "sad":
+              mouthForm = -1.0;
+              cheekBlush = 0.0;
+              browLY = -0.7;
+              browRY = -0.7;
+              browAngle = -0.4;
+              eyeLOpen = 0.8;
+              eyeROpen = 0.8;
+              break;
+            case "angry":
+              mouthForm = -0.8;
+              cheekBlush = 0.0;
+              browLY = -0.8;
+              browRY = -0.8;
+              browAngle = 0.6;
+              eyeLOpen = 0.9;
+              eyeROpen = 0.9;
+              break;
+            case "thinking":
+              mouthForm = 0.2;
+              browLY = 0.6;
+              browRY = -0.3;
+              eyeLOpen = 0.85;
+              eyeROpen = 0.85;
+              break;
+            case "wink":
+              mouthForm = 0.8;
+              cheekBlush = 0.6;
+              eyeLOpen = 0.0;
+              eyeROpen = 1.0;
+              break;
+            case "neutral":
+            default:
+              mouthForm = 0.0;
+              cheekBlush = 0.0;
+              browLY = 0.0;
+              browRY = 0.0;
+              break;
+          }
+
+          if (motionEyeLOpenOverride !== null) {
+            eyeLOpen = motionEyeLOpenOverride;
+          }
+
+          const finalAngleX = effectiveX * 25 + motionAngleX;
+          const finalAngleY = -effectiveY * 20 + motionAngleY;
+          const finalAngleZ = motionAngleZ;
+          const finalMouthOpen = Math.max(mouthOpenRatio, motionMouthOpen);
+
+          const setParam = (id: string, altId: string, val: number) => {
+            try {
+              if (typeof core.setParameterValueById === "function") {
+                core.setParameterValueById(id, val);
+                if (altId) core.setParameterValueById(altId, val);
+              } else if (typeof core.setParamFloat === "function") {
+                core.setParamFloat(id, val);
+                if (altId) core.setParamFloat(altId, val);
+              }
+            } catch (e) {}
+          };
+
+          setParam("ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y", finalMouthOpen);
+          setParam("ParamMouthForm", "PARAM_MOUTH_FORM", mouthForm);
+          setParam("ParamCheek", "PARAM_CHEEK", cheekBlush);
+          setParam("ParamAngleX", "PARAM_ANGLE_X", finalAngleX);
+          setParam("ParamAngleY", "PARAM_ANGLE_Y", finalAngleY);
+          setParam("ParamAngleZ", "PARAM_ANGLE_Z", finalAngleZ);
+          setParam("ParamBodyAngleZ", "PARAM_BODY_ANGLE_Z", motionBodyAngleZ);
+          setParam("ParamEyeBallX", "PARAM_EYE_BALL_X", effectiveX);
+          setParam("ParamEyeBallY", "PARAM_EYE_BALL_Y", -effectiveY);
+          setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", eyeLOpen);
+          setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", eyeROpen);
+          setParam("ParamBrowLY", "PARAM_BROW_L_Y", browLY);
+          setParam("ParamBrowRY", "PARAM_BROW_R_Y", browRY);
+          setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", browAngle);
+          setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", browAngle);
         } catch (e) {
           // Ignore parameter errors if model uses different Cubism ID names
         }
       }
     }
-  }, [mouthOpenRatio, mousePos, emotion, live2dStatus, isSpeaking]);
+  }, [mouthOpenRatio, mousePos, emotion, activeMotion, live2dStatus, isSpeaking]);
 
   // Procedural 2D Anime Avatar Canvas fallback driver
   useEffect(() => {
@@ -844,39 +1035,66 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     {
       id: "happy",
       label: "Happy",
-      icon: <Smile className="w-4 h-4" />,
+      icon: <Smile className="w-3.5 h-3.5" />,
       color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
     },
     {
       id: "blush",
       label: "Blush",
-      icon: <Heart className="w-4 h-4" />,
+      icon: <Heart className="w-3.5 h-3.5" />,
       color: "bg-pink-500/20 text-pink-300 border-pink-500/40",
     },
     {
       id: "excited",
       label: "Excited",
-      icon: <Sparkles className="w-4 h-4" />,
+      icon: <Sparkles className="w-3.5 h-3.5" />,
       color: "bg-amber-500/20 text-amber-300 border-amber-500/40",
     },
     {
       id: "surprised",
       label: "Surprised",
-      icon: <Zap className="w-4 h-4" />,
+      icon: <Zap className="w-3.5 h-3.5" />,
       color: "bg-purple-500/20 text-purple-300 border-purple-500/40",
     },
     {
       id: "thinking",
       label: "Thinking",
-      icon: <HelpCircle className="w-4 h-4" />,
+      icon: <HelpCircle className="w-3.5 h-3.5" />,
       color: "bg-blue-500/20 text-blue-300 border-blue-500/40",
     },
     {
       id: "sad",
       label: "Sad",
-      icon: <Frown className="w-4 h-4" />,
+      icon: <Frown className="w-3.5 h-3.5" />,
       color: "bg-indigo-500/20 text-indigo-300 border-indigo-500/40",
     },
+    {
+      id: "angry",
+      label: "Angry",
+      icon: <Flame className="w-3.5 h-3.5" />,
+      color: "bg-rose-500/20 text-rose-300 border-rose-500/40",
+    },
+    {
+      id: "wink",
+      label: "Wink",
+      icon: <Eye className="w-3.5 h-3.5" />,
+      color: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40",
+    },
+    {
+      id: "neutral",
+      label: "Neutral",
+      icon: <MinusCircle className="w-3.5 h-3.5" />,
+      color: "bg-slate-500/20 text-slate-300 border-slate-500/40",
+    },
+  ];
+
+  const motionList: { id: MotionType; label: string; icon: React.ReactNode }[] = [
+    { id: "nod", label: "Nod", icon: <Activity className="w-3 h-3 text-emerald-400" /> },
+    { id: "wave", label: "Wave", icon: <Hand className="w-3 h-3 text-blue-400" /> },
+    { id: "shake", label: "Shake", icon: <RotateCw className="w-3 h-3 text-amber-400" /> },
+    { id: "bow", label: "Bow", icon: <Bot className="w-3 h-3 text-violet-400" /> },
+    { id: "laugh", label: "Laugh", icon: <Sparkles className="w-3 h-3 text-pink-400" /> },
+    { id: "wink", label: "Wink", icon: <Eye className="w-3 h-3 text-cyan-400" /> },
   ];
 
   return (
@@ -977,12 +1195,69 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           </div>
         )}
 
-        {/* Emotion Status Badge */}
-        <div className="absolute top-3 right-3 flex items-center gap-2 z-20">
+        {/* Emotion & Motion Status Badges */}
+        <div className="absolute top-3 right-3 flex flex-wrap items-center gap-2 z-20">
+          {activeMotion !== "none" && (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 capitalize flex items-center gap-1 shadow-lg backdrop-blur animate-pulse">
+              <Activity className="w-3 h-3 text-emerald-400" />
+              <span>Motion: [{activeMotion}]</span>
+            </span>
+          )}
           <span className="text-xs font-medium px-3 py-1 rounded-full bg-slate-900/90 border border-violet-500/40 text-violet-300 capitalize flex items-center gap-1.5 shadow-lg backdrop-blur">
             <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-            <span>{emotion}</span>
+            <span>Expression: [{emotion}]</span>
           </span>
+        </div>
+
+        {/* Quick Motion & Expression Manual Trigger Overlay */}
+        <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5 z-20 pointer-events-auto">
+          <div className="bg-slate-950/90 border border-slate-800/80 rounded-2xl p-2 backdrop-blur shadow-xl space-y-1.5 max-w-[260px]">
+            <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider flex items-center justify-between">
+              <span>Quick Expressions</span>
+            </div>
+            <div className="flex flex-wrap gap-1 max-h-[70px] overflow-y-auto pr-1">
+              {emotionList.map((item) => {
+                const isActive = emotion === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onEmotionChange?.(item.id)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-medium flex items-center gap-1 transition border ${
+                      isActive
+                        ? "bg-violet-600 text-white border-violet-400 shadow-sm"
+                        : "bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200"
+                    }`}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider pt-1 border-t border-slate-800/80">
+              <span>Realtime Motion Gestures</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {motionList.map((m) => {
+                const isActive = activeMotion === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => triggerMotion(m.id)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-medium flex items-center gap-1 transition border ${
+                      isActive
+                        ? "bg-emerald-600 text-white border-emerald-400 shadow-sm"
+                        : "bg-slate-900 text-slate-400 border-slate-800 hover:text-emerald-300"
+                    }`}
+                  >
+                    {m.icon}
+                    <span>[{m.label}]</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Lip-Sync Waveform Indicator */}

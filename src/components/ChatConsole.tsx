@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ChatMessage, EmotionType, OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile } from "../types";
+import { ChatMessage, EmotionType, MotionType, OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile } from "../types";
 import { fetchOpenAITTSAudioBlob } from "../lib/openaiTts";
+import { parseEmotionAndMotionTags } from "../lib/tagParser";
 import { Live2DAvatar } from "./Live2DAvatar";
 import { PersonaEditorModal } from "./PersonaEditorModal";
 import {
@@ -68,6 +69,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
 
   const [input, setInput] = useState("");
   const [currentEmotion, setCurrentEmotion] = useState<EmotionType>("happy");
+  const [currentMotion, setCurrentMotion] = useState<MotionType>("none");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audioVolume, setAudioVolume] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -486,7 +488,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   const speakText = async (text: string) => {
     if (ttsConfig.enabled === false) return;
 
-    const cleanSpeech = text.replace(/^\[(happy|blush|sad|surprised|thinking|excited)\]\s*/i, "").trim();
+    const { cleanText: cleanSpeech } = parseEmotionAndMotionTags(text, currentEmotion);
     if (!cleanSpeech) return;
 
     if (ttsConfig.provider === "openai") {
@@ -524,9 +526,14 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
             const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
             if (AudioContextClass) {
               audioCtx = new AudioContextClass();
+              if (audioCtx.state === "suspended") {
+                audioCtx.resume().catch(() => {});
+              }
+
               const source = audioCtx.createMediaElementSource(audio);
               const analyser = audioCtx.createAnalyser();
               analyser.fftSize = 256;
+              analyser.smoothingTimeConstant = 0.5; // Smooth mouth transitions
               source.connect(analyser);
               analyser.connect(audioCtx.destination);
 
@@ -536,15 +543,28 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
               const updateVolume = () => {
                 if (audio.paused || audio.ended) return;
                 analyser.getByteFrequencyData(dataArray);
+
+                // Analyze human voice frequency spectrum (~150Hz to 4000Hz, approx. bins 1 to 25)
                 let sum = 0;
-                for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
-                const avg = sum / bufferLength;
-                setAudioVolume(Math.min(1, avg / 100));
+                const minBin = 1;
+                const maxBin = Math.min(25, bufferLength);
+                const binCount = maxBin - minBin;
+
+                for (let i = minBin; i < maxBin; i++) {
+                  sum += dataArray[i];
+                }
+
+                const avg = binCount > 0 ? sum / binCount : 0;
+                // Scale average volume (0-255) to 0.0-1.0 normalized mouth parameter value
+                const normalizedVol = Math.min(1.0, Math.max(0, (avg - 15) / 120));
+                setAudioVolume(normalizedVol);
+
                 animFrameId = requestAnimationFrame(updateVolume);
               };
               updateVolume();
             }
           } catch (e) {
+            console.warn("Web Audio API Analyser fallback to random rhythm:", e);
             let simInterval = setInterval(() => {
               if (audio.paused || audio.ended) {
                 clearInterval(simInterval);
@@ -690,27 +710,28 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         }
       }
 
-      const emotionMatch = replyContent.match(/^\[(happy|blush|sad|surprised|thinking|excited)\]/i);
-      if (emotionMatch) {
-        newEmotion = emotionMatch[1].toLowerCase() as EmotionType;
-      }
+      const parsedTags = parseEmotionAndMotionTags(replyContent, currentEmotion);
+      newEmotion = parsedTags.primaryEmotion;
+      const newMotion = parsedTags.primaryMotion;
 
-      if (newEmotion === "excited") {
+      if (newEmotion === "excited" || newMotion === "laugh") {
         confetti({ particleCount: 40, spread: 60, origin: { y: 0.7 } });
       }
 
       setCurrentEmotion(newEmotion);
+      setCurrentMotion(newMotion);
 
       const waifuMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: "waifu",
         text: replyContent,
         emotion: newEmotion,
+        motion: newMotion,
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, waifuMsg]);
-      speakText(replyContent);
+      speakText(parsedTags.cleanText);
     } catch (err: any) {
       setMessages((prev) => [
         ...prev,
@@ -765,6 +786,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
             key={activeProfile.id + activeProfile.live2dModelUrl}
             onDebugLog={onDebugLog}
             emotion={currentEmotion}
+            motion={currentMotion}
             isSpeaking={isSpeaking}
             characterName={activeProfile.name}
             modelUrl={activeProfile.live2dModelUrl}
@@ -786,6 +808,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
               });
             }}
             onEmotionChange={(emo) => setCurrentEmotion(emo)}
+            onMotionTrigger={(mo) => setCurrentMotion(mo)}
             audioVolume={audioVolume}
           />
         </div>
@@ -865,11 +888,18 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
                     <span className="font-bold text-xs opacity-90">
                       {msg.sender === "user" ? "You" : msg.sender === "waifu" ? activeProfile.name : "System"}
                     </span>
-                    {msg.emotion && (
-                      <span className="text-[10px] bg-violet-500/20 px-2 py-0.5 rounded text-violet-300 font-mono uppercase tracking-wider">
-                        [{msg.emotion}]
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {msg.emotion && (
+                        <span className="text-[10px] bg-violet-500/20 border border-violet-500/30 px-2 py-0.5 rounded text-violet-300 font-mono uppercase tracking-wider">
+                          [{msg.emotion}]
+                        </span>
+                      )}
+                      {msg.motion && msg.motion !== "none" && (
+                        <span className="text-[10px] bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 rounded text-emerald-300 font-mono uppercase tracking-wider">
+                          [{msg.motion}]
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <p className="whitespace-pre-wrap">{msg.text}</p>

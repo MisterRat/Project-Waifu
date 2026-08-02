@@ -18,13 +18,25 @@ export interface SmtpConfig {
   adminEmail: string;
 }
 
-export type EmotionType = "happy" | "blush" | "sad" | "surprised" | "thinking" | "excited" | "neutral";
+export type EmotionType =
+  | "happy"
+  | "blush"
+  | "sad"
+  | "surprised"
+  | "thinking"
+  | "excited"
+  | "angry"
+  | "neutral"
+  | "wink";
+
+export type MotionType = "nod" | "wave" | "shake" | "bow" | "laugh" | "wink" | "none";
 
 export interface ChatMessage {
   id: string;
   sender: "user" | "waifu" | "system";
   text: string;
   emotion?: EmotionType;
+  motion?: MotionType;
   timestamp: Date;
   audioUrl?: string;
 }
