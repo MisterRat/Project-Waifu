@@ -25,6 +25,9 @@ import {
   getSmtpConfig,
   saveSmtpConfig,
   setUserPin,
+  saveLive2dZip,
+  getAllLive2dZips,
+  deleteLive2dZip,
 } from "./server/db.js";
 import {
   sendMagicLinkEmail,
@@ -109,6 +112,9 @@ async function startServer() {
     }
   });
 
+  // Rate limiting map for magic link requests
+  const lastMagicLinkRequest = new Map<string, number>();
+
   // POST /api/auth/register
   app.post("/api/auth/register", async (req, res) => {
     try {
@@ -118,6 +124,14 @@ async function startServer() {
       }
 
       const cleanEmail = email.trim().toLowerCase();
+      const now = Date.now();
+      const lastTime = lastMagicLinkRequest.get(cleanEmail) || 0;
+      if (now - lastTime < 60000) {
+        const remainingSeconds = Math.ceil((60000 - (now - lastTime)) / 1000);
+        return res.status(429).json({ error: `Please wait ${remainingSeconds}s before requesting another Magic Link (once a minute limit).` });
+      }
+      lastMagicLinkRequest.set(cleanEmail, now);
+
       let user = await getUserByEmail(cleanEmail);
       const count = await getUserCount();
       const isFirst = count === 0;
@@ -193,6 +207,14 @@ async function startServer() {
       }
 
       const cleanEmail = email.trim().toLowerCase();
+      const now = Date.now();
+      const lastTime = lastMagicLinkRequest.get(cleanEmail) || 0;
+      if (now - lastTime < 60000) {
+        const remainingSeconds = Math.ceil((60000 - (now - lastTime)) / 1000);
+        return res.status(429).json({ error: `Please wait ${remainingSeconds}s before requesting another Magic Link (once a minute limit).` });
+      }
+      lastMagicLinkRequest.set(cleanEmail, now);
+
       const user = await getUserByEmail(cleanEmail);
 
       if (!user) {
@@ -310,7 +332,8 @@ async function startServer() {
         if (!user.pin) {
           await setUserPin(user.id, pin.trim());
         } else if (user.pin !== pin.trim()) {
-          return res.status(401).json({ error: "Incorrect System Owner PIN." });
+          await new Promise(resolve => setTimeout(resolve, 10000));
+          return res.status(401).json({ error: "Incorrect System Owner PIN. Paused for 10 seconds." });
         }
       }
       const session = await createSession(user.id);
@@ -594,6 +617,49 @@ async function startServer() {
     }
   }
 
+  // Restore all models stored in SQLite database zips if not present on disk
+  try {
+    const savedZips = await getAllLive2dZips();
+    for (const z of savedZips) {
+      const modelFolderPath = path.join(MODELS_DIR, z.modelId);
+      const checkModelJson = (dir: string): boolean => {
+        if (!fs.existsSync(dir)) return false;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (checkModelJson(full)) return true;
+          } else if (entry.isFile()) {
+            const lower = entry.name.toLowerCase();
+            if (lower.endsWith(".model3.json") || lower.endsWith(".model.json")) return true;
+          }
+        }
+        return false;
+      };
+
+      if (!checkModelJson(modelFolderPath)) {
+        console.log(`[Project Waifu] Restoring Live2D model "${z.name}" (${z.modelId}) from SQLite database zip...`);
+        const buffer = Buffer.from(z.zipBase64, "base64");
+        const zip = await JSZip.loadAsync(buffer);
+        fs.mkdirSync(modelFolderPath, { recursive: true });
+        const zipKeys = Object.keys(zip.files);
+        for (const key of zipKeys) {
+          const entry = zip.files[key];
+          if (entry.dir) continue;
+          const outPath = path.join(modelFolderPath, key);
+          const parentDir = path.dirname(outPath);
+          if (!fs.existsSync(parentDir)) {
+            fs.mkdirSync(parentDir, { recursive: true });
+          }
+          const contentBuffer = await entry.async("nodebuffer");
+          fs.writeFileSync(outPath, contentBuffer);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Project Waifu] Failed to restore Live2D zips from SQLite:", err);
+  }
+
   // Serve models directory statically with CORS headers and appropriate MIME types
   app.use(
     "/models",
@@ -720,6 +786,9 @@ async function startServer() {
       const modelName = modelFilename.replace(/\.(model3|model)\.json$/i, "");
       const modelUrl = `/models/${modelId}/${relModelPath}`;
 
+      // Save zip file data into SQLite database for persistent deployment/redeploy safety
+      await saveLive2dZip(modelId, modelName, cleanBase64);
+
       console.log(`[Project Waifu] Live2D Zip extracted successfully to ${modelFolderPath} -> ${modelUrl}`);
       return res.json({
         success: true,
@@ -748,6 +817,7 @@ async function startServer() {
       if (fs.existsSync(targetPath)) {
         fs.rmSync(targetPath, { recursive: true, force: true });
       }
+      await deleteLive2dZip(id);
       return res.json({ success: true, message: `Model ${id} deleted` });
     } catch (err: any) {
       console.error("Error deleting Live2D model:", err);

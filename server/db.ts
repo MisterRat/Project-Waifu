@@ -85,6 +85,13 @@ export async function getDb(): Promise<{ db: Database; save: () => void }> {
         admin_email TEXT NOT NULL DEFAULT '',
         updated_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS live2d_zips (
+        model_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        zip_base64 TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
     `);
 
     try {
@@ -246,7 +253,22 @@ export async function createSession(userId: string) {
 }
 
 export async function getUserBySession(sessionId: string) {
-  const { db } = await getDb();
+  const { db, save } = await getDb();
+  
+  // Ensure at least one admin exists (first registered user)
+  const adminCheck = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+  const hasAdmin = adminCheck.step();
+  adminCheck.free();
+  if (!hasAdmin) {
+    const firstUserStmt = db.prepare("SELECT id FROM users ORDER BY created_at ASC LIMIT 1");
+    if (firstUserStmt.step()) {
+      const firstId = firstUserStmt.getAsObject().id as string;
+      db.run("UPDATE users SET role = 'admin' WHERE id = ?", [firstId]);
+      save();
+    }
+    firstUserStmt.free();
+  }
+
   const stmt = db.prepare(`
     SELECT u.* FROM sessions s
     JOIN users u ON s.user_id = u.id
@@ -408,5 +430,38 @@ export async function saveSmtpConfig(config: {
     INSERT OR REPLACE INTO smtp_config (id, host, port, secure, auth_user, auth_pass, from_email, admin_email, updated_at)
     VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?)
   `, [config.host, config.port, config.secure ? 1 : 0, config.authUser, config.authPass, config.fromEmail, config.adminEmail, now]);
+  save();
+}
+
+export async function saveLive2dZip(modelId: string, name: string, zipBase64: string) {
+  const { db, save } = await getDb();
+  const now = Date.now();
+  db.run(`
+    INSERT OR REPLACE INTO live2d_zips (model_id, name, zip_base64, created_at)
+    VALUES (?, ?, ?, ?)
+  `, [modelId, name, zipBase64, now]);
+  save();
+}
+
+export async function getAllLive2dZips() {
+  const { db } = await getDb();
+  const stmt = db.prepare("SELECT * FROM live2d_zips ORDER BY created_at ASC");
+  const results = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    results.push({
+      modelId: row.model_id as string,
+      name: row.name as string,
+      zipBase64: row.zip_base64 as string,
+      createdAt: row.created_at as number,
+    });
+  }
+  stmt.free();
+  return results;
+}
+
+export async function deleteLive2dZip(modelId: string) {
+  const { db, save } = await getDb();
+  db.run("DELETE FROM live2d_zips WHERE model_id = ?", [modelId]);
   save();
 }
