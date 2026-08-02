@@ -1,8 +1,26 @@
-# 🎭 Interactive Live2D AI Companion (Waifu AI Console)
+# 🎭 Project Waifu (Live2D AI Companion Console)
 
-An interactive, customizable Web-based AI Companion application featuring **Live2D animated avatars**, **real-time chat with LLMs** (OpenAI compatible), **TTS voice synthesis and STT**, and full **Persona & Model customization**.
+An interactive, customizable Web-based AI Companion application featuring **Live2D animated avatars** with automatic horizontal centering on resize/move, **real-time chat with LLMs** (OpenAI compatible / Gemini), **TTS voice synthesis and STT**, full **Persona & Model customization**, and **secure SQLite server-side authentication & settings sync**.
 
-![Interactive Live2D AI Companion](assets/pwscreenshot.jpg)
+---
+
+## 🌟 Key Features
+
+1. **🎭 Interactive Live2D Avatar Console**
+   - **Automatic Horizontal Centering**: The Live2D model automatically centers horizontally within its container on load, window resize, panning, and dragging.
+   - **Drag & Reposition**: Click and hold the header bar to drag the avatar window anywhere on screen.
+   - **Dynamic Resizing & Zoom**: Smooth mouse wheel zoom, pinch-to-zoom on touch, and bottom-right resize handles with persistent local storage.
+   - **Live Parameter Tracking**: Real-time mouth tracking, emotion badges, and eye/head tracking following cursor or touch.
+
+2. **💬 AI Chat & Voice Assistant**
+   - **Persona Manager**: Quick-switch between preset companions (Kei, Rin, Aoi, etc.) or create custom AI personas with custom system prompts and avatars.
+   - **TTS & STT Support**: Built-in speech synthesis and browser speech recognition for hands-free conversations.
+   - **Custom Model ZIP Upload**: Directly upload `.zip` packages containing Live2D `model3.json` and associated asset files.
+
+3. **🔐 Secure Server-Side Architecture & Admin Panel**
+   - **Magic Link Authentication**: Passwordless secure login via email magic links.
+   - **Optional SMTP Email Delivery**: Configure SMTP settings in the Admin panel to send real emails, or view direct links in-UI if unconfigured.
+   - **Admin Management Console**: User approval workflows, role management (admin/user), and system diagnostics.
 
 ---
 
@@ -27,7 +45,7 @@ If you have never deployed an app using Portainer before, follow this simple ste
    - Click the **+ Add stack** button in the top right.
 
 3. **Configure the Stack**
-   - **Name**: Enter a name for your stack (e.g., `ai-waifu-app`).
+   - **Name**: Enter a name for your stack (e.g., `project-waifu`).
    - **Build method**: Click on **Repository**.
 
 4. **Repository Settings**
@@ -71,12 +89,12 @@ docker compose up -d --build
 ### 1. 🎭 Interactive Live2D Avatar
 - **Drag & Reposition**: Click and hold the header bar of the Avatar window to drag it around your screen.
 - **Resize Window**: Click and drag the bottom-right resize handle to make the avatar box larger or smaller. Window positions and sizes automatically save to browser storage.
-- **Zoom & Camera**: Use the zoom slider or mouse wheel to adjust avatar scale and alignment.
+- **Horizontal Centering**: The avatar model automatically keeps horizontally centered within the model container during load, resize, panning, and touch interactions.
 - **Touch / Motion Interactions**: Click on the avatar to trigger expressions, animations, and motion reactions.
 
 ### 2. 💬 AI Chat Console
 - **Type Messages**: Converse with your AI companion in natural language.
-- **Voice Output (TTS)**: Speech synthesis plays automatically. By default, it uses **Microsoft Edge TTS** (completely free, zero API key required).
+- **Voice Output (TTS)**: Speech synthesis plays automatically. By default, it uses Microsoft Edge TTS or Web Speech API.
 - **Voice Input (STT)**: Click the microphone icon to speak directly to your companion using browser speech recognition.
 
 ### 3. ⚙️ Customizing Personas & Avatars
@@ -109,3 +127,4 @@ This project utilizes and builds upon the following open-source modules, librari
 - **[Express.js](https://expressjs.com/)** (MIT License) - Server-side backend web framework for Node.js.
 - **[Google Gen AI SDK (@google/genai)](https://github.com/google-genai/google-genai-js)** (Apache-2.0 License) - Official client library for Google Gemini models.
 - **[Tailwind CSS](https://tailwindcss.com/) & [Motion](https://motion.dev/)** (MIT License) - Utility-first CSS framework and fluid layout animation library.
+

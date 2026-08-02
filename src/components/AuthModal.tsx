@@ -197,8 +197,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-100 text-base">User Account & Settings Sync</h3>
-              <p className="text-xs text-slate-400 font-mono">SQLite Server-Side Storage</p>
+              <h3 className="font-bold text-slate-100 text-base">Welcome to Project Waifu</h3>
             </div>
           </div>
           <button
