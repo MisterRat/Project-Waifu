@@ -148,7 +148,12 @@ async function startServer() {
         }
         // If already approved, issue magic link directly
         const { token: magicToken } = await createAuthToken(user.id, "magic_link");
-        const { token: pinToken } = await createAuthToken(user.id, "pin");
+        const isAdmin = user.role === "admin";
+        let pinToken: string | undefined = undefined;
+        if (isAdmin) {
+          const pinRes = await createAuthToken(user.id, "pin");
+          pinToken = pinRes.token;
+        }
         const appUrl = `${req.protocol}://${req.get("host")}`;
         const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
 
@@ -156,9 +161,11 @@ async function startServer() {
 
         return res.json({
           status: "approved",
-          message: mailRes.sent ? "Magic Link and PIN sent to your email (and available below)." : "Magic Link and PIN generated.",
+          message: mailRes.sent 
+            ? (isAdmin ? "Magic Link and PIN sent to your email (and available below)." : "Magic Link sent to your email (and available below).")
+            : (isAdmin ? "Magic Link and PIN generated." : "Magic Link generated."),
           magicLink: magicLinkUrl,
-          pin: pinToken,
+          pin: pinToken || null,
         });
       }
 
@@ -169,7 +176,12 @@ async function startServer() {
 
       if (status === "approved") {
         const { token: magicToken } = await createAuthToken(user.id, "magic_link");
-        const { token: pinToken } = await createAuthToken(user.id, "pin");
+        const isAdmin = user.role === "admin";
+        let pinToken: string | undefined = undefined;
+        if (isAdmin) {
+          const pinRes = await createAuthToken(user.id, "pin");
+          pinToken = pinRes.token;
+        }
         const appUrl = `${req.protocol}://${req.get("host")}`;
         const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
 
@@ -178,9 +190,9 @@ async function startServer() {
         return res.json({
           status: "approved",
           isFirstUser: true,
-          message: "Account created as Administrator! Magic link generated.",
+          message: isAdmin ? "Account created as Administrator! Magic link and PIN generated." : "Account created! Magic link generated.",
           magicLink: magicLinkUrl,
-          pin: pinToken,
+          pin: pinToken || null,
         });
       } else {
         const appUrl = `${req.protocol}://${req.get("host")}`;
@@ -230,16 +242,23 @@ async function startServer() {
       }
 
       const { token: magicToken } = await createAuthToken(user.id, "magic_link");
-      const { token: pinToken } = await createAuthToken(user.id, "pin");
+      const isAdmin = user.role === "admin";
+      let pinToken: string | undefined = undefined;
+      if (isAdmin) {
+        const pinRes = await createAuthToken(user.id, "pin");
+        pinToken = pinRes.token;
+      }
       const appUrl = `${req.protocol}://${req.get("host")}`;
       const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
 
       const mailRes = await sendMagicLinkEmail(cleanEmail, magicLinkUrl, pinToken);
 
       return res.json({
-        message: mailRes.sent ? "Magic link and PIN sent to your email (and available below)!" : "Magic link and PIN generated.",
+        message: mailRes.sent 
+          ? (isAdmin ? "Magic link and PIN sent to your email (and available below)!" : "Magic link sent to your email (and available below)!")
+          : (isAdmin ? "Magic link and PIN generated." : "Magic link generated."),
         magicLink: magicLinkUrl,
-        pin: pinToken,
+        pin: pinToken || null,
       });
     } catch (err: any) {
       console.error("Login error:", err);
@@ -433,7 +452,12 @@ async function startServer() {
       await updateUserStatus(id, "approved");
 
       const { token: magicToken } = await createAuthToken(id, "magic_link");
-      const { token: pinToken } = await createAuthToken(id, "pin");
+      const isAdmin = targetUser.role === "admin";
+      let pinToken: string | undefined = undefined;
+      if (isAdmin) {
+        const pinRes = await createAuthToken(id, "pin");
+        pinToken = pinRes.token;
+      }
       const appUrl = `${req.protocol}://${req.get("host")}`;
       const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
 
@@ -443,7 +467,7 @@ async function startServer() {
         status: "ok",
         message: `User ${targetUser.email} approved.`,
         magicLink: magicLinkUrl,
-        pin: pinToken,
+        pin: pinToken || null,
       });
     } catch (err: any) {
       console.error("Approve user error:", err);
