@@ -38,6 +38,8 @@ export async function getDb(): Promise<{ db: Database; save: () => void }> {
         role TEXT NOT NULL DEFAULT 'user',
         status TEXT NOT NULL DEFAULT 'pending',
         pin TEXT,
+        failed_login_count INTEGER NOT NULL DEFAULT 0,
+        is_locked INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         last_login INTEGER
       );
@@ -89,9 +91,15 @@ export async function getDb(): Promise<{ db: Database; save: () => void }> {
 
     try {
       dbInstance.run("ALTER TABLE users ADD COLUMN pin TEXT");
-    } catch (e) {
-      // Column may already exist
-    }
+    } catch (e) {}
+
+    try {
+      dbInstance.run("ALTER TABLE users ADD COLUMN failed_login_count INTEGER NOT NULL DEFAULT 0");
+    } catch (e) {}
+
+    try {
+      dbInstance.run("ALTER TABLE users ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0");
+    } catch (e) {}
 
     persistDb();
   }
@@ -113,6 +121,8 @@ export async function getUserByEmail(email: string) {
       role: 'admin' | 'user';
       status: 'pending' | 'approved' | 'rejected';
       pin: string | null;
+      failed_login_count: number;
+      is_locked: number;
       created_at: number;
       last_login: number | null;
     };
@@ -134,6 +144,8 @@ export async function getUserById(id: string) {
       role: 'admin' | 'user';
       status: 'pending' | 'approved' | 'rejected';
       pin: string | null;
+      failed_login_count: number;
+      is_locked: number;
       created_at: number;
       last_login: number | null;
     };
@@ -151,7 +163,7 @@ export async function createUser(email: string, role: 'admin' | 'user' = 'user',
     [id, email.trim().toLowerCase(), role, status, pin || null, now]
   );
   save();
-  return { id, email: email.trim().toLowerCase(), role, status, pin: pin || null, created_at: now, last_login: null };
+  return { id, email: email.trim().toLowerCase(), role, status, pin: pin || null, failed_login_count: 0, is_locked: 0, created_at: now, last_login: null };
 }
 
 export async function setUserPin(userId: string, pin: string) {
@@ -203,7 +215,7 @@ export async function getUserCount() {
 }
 
 // Token & Session Management
-export async function createAuthToken(userId: string, type: 'magic_link' | 'pin' = 'magic_link') {
+export async function createAuthToken(userId: string, type: 'magic_link' | 'pin' | 'unlock' = 'magic_link') {
   const { db, save } = await getDb();
   const token = type === 'pin' ? Math.floor(100000 + Math.random() * 900000).toString() : crypto.randomBytes(24).toString("hex");
   const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
@@ -458,3 +470,35 @@ export async function deleteLive2dZip(modelId: string) {
   db.run("DELETE FROM live2d_zips WHERE model_id = ?", [modelId]);
   save();
 }
+
+export async function incrementFailedLogin(userId: string) {
+  const { db, save } = await getDb();
+  const user = await getUserById(userId);
+  if (!user) return { failed_login_count: 0, is_locked: 0 };
+  const newCount = (user.failed_login_count || 0) + 1;
+  const isLocked = newCount >= 10 ? 1 : 0;
+
+  db.run("UPDATE users SET failed_login_count = ?, is_locked = ? WHERE id = ?", [newCount, isLocked, userId]);
+  save();
+  return { failed_login_count: newCount, is_locked: isLocked };
+}
+
+export async function resetFailedLogin(userId: string) {
+  const { db, save } = await getDb();
+  db.run("UPDATE users SET failed_login_count = 0, is_locked = 0 WHERE id = ?", [userId]);
+  save();
+}
+
+export async function getUserByToken(tokenStr: string) {
+  const { db } = await getDb();
+  const stmt = db.prepare("SELECT user_id FROM auth_tokens WHERE token = ?");
+  stmt.bind([tokenStr.trim()]);
+  if (stmt.step()) {
+    const obj = stmt.getAsObject();
+    stmt.free();
+    return obj.user_id as string;
+  }
+  stmt.free();
+  return null;
+}
+
