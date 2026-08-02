@@ -94,7 +94,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
 
       setStatusMessage({
         type: "success",
-        text: data.message + (data.pin ? ` (PIN: ${data.pin})` : ""),
+        text: data.message,
       });
       fetchUsers();
     } catch (err: any) {
@@ -391,7 +391,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
           ) : (
             <form onSubmit={handleSaveSmtp} className="space-y-4">
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400">
-                💡 <strong>Optional SMTP Setup:</strong> If SMTP is configured, Magic Links and Approval notifications will automatically be emailed to users and Admin. If left blank, login PINs and direct links are safely displayed inside the UI!
+                💡 <strong>Optional SMTP Setup:</strong> If SMTP is configured, Magic Links and Approval notifications will automatically be emailed to users and Admin. If left blank, direct Magic Links are safely displayed inside the UI!
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

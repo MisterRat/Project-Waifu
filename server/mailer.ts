@@ -1,16 +1,15 @@
 import nodemailer from "nodemailer";
 import { getSmtpConfig } from "./db.js";
 
-export async function sendMagicLinkEmail(toEmail: string, magicLink: string, pin?: string) {
+export async function sendMagicLinkEmail(toEmail: string, magicLink: string) {
   const smtp = await getSmtpConfig();
 
   if (!smtp || !smtp.host) {
-    console.log(`[Mailer] SMTP not configured. Magic link for ${toEmail}: ${magicLink}${pin ? ` (PIN: ${pin})` : ""}`);
+    console.log(`[Mailer] SMTP not configured. Magic link for ${toEmail}: ${magicLink}`);
     return {
       sent: false,
       reason: "SMTP is not configured in Settings. Direct link provided.",
       magicLink,
-      pin,
     };
   }
 
@@ -23,27 +22,20 @@ export async function sendMagicLinkEmail(toEmail: string, magicLink: string, pin
       tls: { rejectUnauthorized: false },
     });
 
-    const subject = pin ? "Your Magic Link & Login PIN for Project Waifu" : "Your Magic Link for Project Waifu";
-    const pinHtml = pin ? `
-      <p style="font-size: 14px; color: #94a3b8;">Alternatively, you can manually enter your 6-digit login PIN:</p>
-      <div style="font-size: 24px; font-weight: bold; font-family: monospace; letter-spacing: 4px; color: #38bdf8; background: #1e293b; padding: 12px; border-radius: 8px; text-align: center; margin: 12px 0;">
-        ${pin}
-      </div>
-    ` : "";
+    const subject = "Your Magic Link for Project Waifu";
 
     const info = await transporter.sendMail({
       from: smtp.fromEmail || `"Project Waifu" <no-reply@${smtp.host}>`,
       to: toEmail,
       subject,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px; background: #0f172a; color: #f8fafc;">
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background: #0f172a; color: #f8fafc;">
           <h2 style="color: #ec4899; margin-top: 0;">Project Waifu Login</h2>
           <p>Click the button below to sign in immediately to your account:</p>
           <div style="margin: 24px 0; text-align: center;">
             <a href="${magicLink}" style="background-color: #ec4899; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">Sign In to Project Waifu</a>
           </div>
-          ${pinHtml}
-          <p style="font-size: 12px; color: #64748b; margin-top: 24px;">This link${pin ? " and PIN" : ""} expires in 15 minutes. If you did not request this email, you can safely ignore it.</p>
+          <p style="font-size: 12px; color: #64748b; margin-top: 24px;">This link expires in 15 minutes. If you did not request this email, you can safely ignore it.</p>
         </div>
       `,
     });
@@ -52,7 +44,7 @@ export async function sendMagicLinkEmail(toEmail: string, magicLink: string, pin
     return { sent: true, messageId: info.messageId };
   } catch (err: any) {
     console.error(`[Mailer] Failed to send email to ${toEmail}:`, err);
-    return { sent: false, error: err.message, magicLink, pin };
+    return { sent: false, error: err.message, magicLink };
   }
 }
 
