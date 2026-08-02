@@ -298,6 +298,68 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     return () => cancelAnimationFrame(animId);
   }, [isSpeaking, audioVolume]);
 
+  // Silent Extended Idle Animation Driver (fires a random gesture every 25s if idle)
+  useEffect(() => {
+    const IDLE_PERIOD_MS = 25000;
+
+    const idleTimer = setInterval(() => {
+      // Skip if character is currently speaking
+      if (isSpeaking) return;
+
+      const ALL_IDLE_MOTIONS: MotionType[] = [
+        "check_nails",
+        "jiggle_dance",
+        "sigh_tilt",
+        "curious_glance",
+        "stretch_wave",
+        "nod",
+        "wave",
+        "shake",
+        "bow",
+        "laugh",
+        "wink",
+      ];
+
+      const randomMotion = ALL_IDLE_MOTIONS[Math.floor(Math.random() * ALL_IDLE_MOTIONS.length)];
+      let methodBTriggered = false;
+
+      // Method B: Attempt native Live2D motion3 file / motionManager group execution
+      if (live2dStatus === "active" && live2dModelRef.current) {
+        try {
+          const model = live2dModelRef.current;
+          const motionMgr = model.internalModel?.motionManager;
+
+          if (motionMgr) {
+            const definitions = motionMgr.definitions || motionMgr.motionGroups || {};
+            const groupKeys = Object.keys(definitions);
+
+            if (groupKeys.length > 0) {
+              const targetGroup =
+                groupKeys.find((k) => k.toLowerCase().includes("idle")) ||
+                groupKeys[Math.floor(Math.random() * groupKeys.length)];
+
+              if (targetGroup) {
+                motionMgr.startMotion(targetGroup, 0, 2);
+                methodBTriggered = true;
+                addDebugLog(`[Extended Idle] Executed Method B motion3 from group "${targetGroup}"`);
+              }
+            }
+          }
+        } catch (e) {
+          methodBTriggered = false;
+        }
+      }
+
+      // Method A: Fallback to synthetic procedural motion curves if Method B is unavailable
+      if (!methodBTriggered) {
+        triggerMotion(randomMotion);
+        addDebugLog(`[Extended Idle] Executed Method A synthetic idle gesture: [${randomMotion}]`);
+      }
+    }, IDLE_PERIOD_MS);
+
+    return () => clearInterval(idleTimer);
+  }, [isSpeaking, live2dStatus]);
+
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button === 0) {
       isPanningRef.current = true;
@@ -635,10 +697,13 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           let motionBodyAngleZ = 0;
           let motionMouthOpen = 0;
           let motionEyeLOpenOverride: number | null = null;
+          let motionEyeBallXOverride: number | null = null;
+          let motionEyeBallYOverride: number | null = null;
 
           if (activeMotion !== "none" && motionStartTimeRef.current) {
             const elapsed = (Date.now() - motionStartTimeRef.current) / 1000;
-            const duration = 1.0;
+            const duration = 5.0;
+
             if (elapsed >= duration) {
               setActiveMotion("none");
               motionStartTimeRef.current = null;
@@ -668,6 +733,37 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
                   if (progress < 0.75) {
                     motionEyeLOpenOverride = 0;
                   }
+                  break;
+                case "check_nails":
+                  // Inspect nails: head tilts down and right, gaze shifts down-right
+                  motionAngleX = Math.sin(pRad) * 20;
+                  motionAngleY = -Math.sin(pRad) * 16;
+                  motionAngleZ = -Math.sin(pRad) * 12;
+                  motionEyeBallXOverride = Math.sin(pRad) * 0.8;
+                  motionEyeBallYOverride = -Math.sin(pRad) * 0.8;
+                  break;
+                case "jiggle_dance":
+                  // Playful jiggle sway & shoulder bounce
+                  motionAngleZ = Math.sin(progress * Math.PI * 6) * 16;
+                  motionBodyAngleZ = Math.sin(progress * Math.PI * 6) * 12;
+                  motionAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 8;
+                  break;
+                case "sigh_tilt":
+                  // Soft head tilt back/side with subtle breath open
+                  motionAngleZ = Math.sin(pRad) * 18;
+                  motionAngleY = Math.sin(pRad) * 14;
+                  motionMouthOpen = Math.sin(pRad) * 0.25;
+                  break;
+                case "curious_glance":
+                  // Curious glance left, right, then tilt head inquiringly
+                  motionAngleX = Math.sin(progress * Math.PI * 2) * 22;
+                  motionAngleZ = Math.sin(progress * Math.PI) * 12;
+                  motionEyeBallXOverride = Math.sin(progress * Math.PI * 2) * 0.85;
+                  break;
+                case "stretch_wave":
+                  // Stretch / shoulder lift / gentle sway
+                  motionAngleY = Math.sin(pRad) * 18;
+                  motionBodyAngleZ = Math.sin(pRad) * 10;
                   break;
               }
             }
@@ -778,8 +874,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           setParam("ParamAngleY", "PARAM_ANGLE_Y", finalAngleY);
           setParam("ParamAngleZ", "PARAM_ANGLE_Z", finalAngleZ);
           setParam("ParamBodyAngleZ", "PARAM_BODY_ANGLE_Z", motionBodyAngleZ);
-          setParam("ParamEyeBallX", "PARAM_EYE_BALL_X", effectiveX);
-          setParam("ParamEyeBallY", "PARAM_EYE_BALL_Y", -effectiveY);
+          const finalEyeBallX = motionEyeBallXOverride !== null ? motionEyeBallXOverride : effectiveX;
+          const finalEyeBallY = motionEyeBallYOverride !== null ? motionEyeBallYOverride : -effectiveY;
+
+          setParam("ParamEyeBallX", "PARAM_EYE_BALL_X", finalEyeBallX);
+          setParam("ParamEyeBallY", "PARAM_EYE_BALL_Y", finalEyeBallY);
           setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", eyeLOpen);
           setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", eyeROpen);
           setParam("ParamBrowLY", "PARAM_BROW_L_Y", browLY);
@@ -1129,27 +1228,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           </div>
         )}
 
-        {/* Emotion & Motion Status Badges */}
-        <div className="absolute top-3 right-3 flex flex-wrap items-center gap-2 z-20">
-          {activeMotion !== "none" && (
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 capitalize flex items-center gap-1 shadow-lg backdrop-blur animate-pulse">
-              <Activity className="w-3 h-3 text-emerald-400" />
-              <span>Motion: [{activeMotion}]</span>
-            </span>
-          )}
-          <span className="text-xs font-medium px-3 py-1 rounded-full bg-slate-900/90 border border-violet-500/40 text-violet-300 capitalize flex items-center gap-1.5 shadow-lg backdrop-blur">
-            <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-            <span>Expression: [{emotion}]</span>
-          </span>
-        </div>
-
-        {/* Lip-Sync Waveform Indicator */}
-        {isSpeaking && (
-          <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-violet-950/80 border border-violet-500/40 text-violet-200 px-3 py-1.5 rounded-full text-xs font-medium shadow-lg backdrop-blur animate-pulse z-20">
-            <Volume2 className="w-4 h-4 text-violet-400 animate-bounce" />
-            <span>Speaking (Lip Sync: {Math.round(mouthOpenRatio * 100)}%)</span>
-          </div>
-        )}
       </div>
 
       {/* Model Selection Modal */}

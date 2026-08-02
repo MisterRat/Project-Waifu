@@ -24,7 +24,7 @@ export function parseEmotionAndMotionTags(rawText: string, fallbackEmotion: Emot
   }
 
   const emotionRegex = /\[(happy|blush|sad|surprised|thinking|excited|angry|neutral|wink)\]/gi;
-  const motionRegex = /\[(nod|wave|shake|bow|laugh|wink)\]/gi;
+  const motionRegex = /\[(nod|wave|shake|bow|laugh|wink|check_nails|jiggle_dance|sigh_tilt|curious_glance|stretch_wave)\]/gi;
 
   const emotions: EmotionType[] = [];
   const motions: MotionType[] = [];

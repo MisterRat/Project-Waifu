@@ -29,7 +29,19 @@ export type EmotionType =
   | "neutral"
   | "wink";
 
-export type MotionType = "nod" | "wave" | "shake" | "bow" | "laugh" | "wink" | "none";
+export type MotionType =
+  | "nod"
+  | "wave"
+  | "shake"
+  | "bow"
+  | "laugh"
+  | "wink"
+  | "check_nails"
+  | "jiggle_dance"
+  | "sigh_tilt"
+  | "curious_glance"
+  | "stretch_wave"
+  | "none";
 
 export interface ChatMessage {
   id: string;
