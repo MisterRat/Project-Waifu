@@ -93,6 +93,12 @@ export async function getDb(): Promise<{ db: Database; save: () => void }> {
       // Column may already exist
     }
 
+    try {
+      dbInstance.run("ALTER TABLE users ADD COLUMN failed_pin_attempts INTEGER DEFAULT 0");
+    } catch (e) {
+      // Column may already exist
+    }
+
     persistDb();
   }
 
@@ -111,8 +117,9 @@ export async function getUserByEmail(email: string) {
       id: string;
       email: string;
       role: 'admin' | 'user';
-      status: 'pending' | 'approved' | 'rejected';
+      status: 'pending' | 'approved' | 'rejected' | 'locked';
       pin: string | null;
+      failed_pin_attempts?: number;
       created_at: number;
       last_login: number | null;
     };
@@ -132,8 +139,9 @@ export async function getUserById(id: string) {
       id: string;
       email: string;
       role: 'admin' | 'user';
-      status: 'pending' | 'approved' | 'rejected';
+      status: 'pending' | 'approved' | 'rejected' | 'locked';
       pin: string | null;
+      failed_pin_attempts?: number;
       created_at: number;
       last_login: number | null;
     };
@@ -142,16 +150,16 @@ export async function getUserById(id: string) {
   return null;
 }
 
-export async function createUser(email: string, role: 'admin' | 'user' = 'user', status: 'pending' | 'approved' | 'rejected' = 'pending', pin?: string) {
+export async function createUser(email: string, role: 'admin' | 'user' = 'user', status: 'pending' | 'approved' | 'rejected' | 'locked' = 'pending', pin?: string) {
   const { db, save } = await getDb();
   const id = crypto.randomUUID();
   const now = Date.now();
   db.run(
-    "INSERT INTO users (id, email, role, status, pin, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO users (id, email, role, status, pin, failed_pin_attempts, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
     [id, email.trim().toLowerCase(), role, status, pin || null, now]
   );
   save();
-  return { id, email: email.trim().toLowerCase(), role, status, pin: pin || null, created_at: now, last_login: null };
+  return { id, email: email.trim().toLowerCase(), role, status, pin: pin || null, failed_pin_attempts: 0, created_at: now, last_login: null };
 }
 
 export async function setUserPin(userId: string, pin: string) {
@@ -160,7 +168,39 @@ export async function setUserPin(userId: string, pin: string) {
   save();
 }
 
-export async function updateUserStatus(id: string, status: 'approved' | 'rejected') {
+export async function incrementFailedPinAttempts(userId: string): Promise<number> {
+  const { db, save } = await getDb();
+  db.run("UPDATE users SET failed_pin_attempts = COALESCE(failed_pin_attempts, 0) + 1 WHERE id = ?", [userId]);
+  save();
+  const stmt = db.prepare("SELECT failed_pin_attempts FROM users WHERE id = ?");
+  stmt.bind([userId]);
+  let count = 1;
+  if (stmt.step()) {
+    count = (stmt.getAsObject().failed_pin_attempts as number) || 1;
+  }
+  stmt.free();
+  return count;
+}
+
+export async function resetFailedPinAttempts(userId: string) {
+  const { db, save } = await getDb();
+  db.run("UPDATE users SET failed_pin_attempts = 0 WHERE id = ?", [userId]);
+  save();
+}
+
+export async function lockUser(userId: string) {
+  const { db, save } = await getDb();
+  db.run("UPDATE users SET status = 'locked', failed_pin_attempts = 10 WHERE id = ?", [userId]);
+  save();
+}
+
+export async function unlockUser(userId: string) {
+  const { db, save } = await getDb();
+  db.run("UPDATE users SET status = 'approved', failed_pin_attempts = 0 WHERE id = ?", [userId]);
+  save();
+}
+
+export async function updateUserStatus(id: string, status: 'approved' | 'rejected' | 'locked') {
   const { db, save } = await getDb();
   db.run("UPDATE users SET status = ? WHERE id = ?", [status, id]);
   save();
@@ -203,10 +243,10 @@ export async function getUserCount() {
 }
 
 // Token & Session Management
-export async function createAuthToken(userId: string, type: 'magic_link' | 'pin' = 'magic_link') {
+export async function createAuthToken(userId: string, type: 'magic_link' | 'pin' | 'unlock' = 'magic_link') {
   const { db, save } = await getDb();
   const token = type === 'pin' ? Math.floor(100000 + Math.random() * 900000).toString() : crypto.randomBytes(24).toString("hex");
-  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+  const expiresAt = Date.now() + (type === 'unlock' ? 60 * 60 * 1000 : 15 * 60 * 1000); // 1 hr for unlock, 15 mins for magic link
   db.run(
     "INSERT INTO auth_tokens (token, user_id, type, expires_at, used) VALUES (?, ?, ?, ?, 0)",
     [token, userId, type, expiresAt]

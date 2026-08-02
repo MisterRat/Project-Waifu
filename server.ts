@@ -25,6 +25,10 @@ import {
   getSmtpConfig,
   saveSmtpConfig,
   setUserPin,
+  incrementFailedPinAttempts,
+  resetFailedPinAttempts,
+  lockUser,
+  unlockUser,
   saveLive2dZip,
   getAllLive2dZips,
   deleteLive2dZip,
@@ -32,6 +36,7 @@ import {
 import {
   sendMagicLinkEmail,
   sendAdminPendingUserNotification,
+  sendAccountUnlockEmail,
   testSmtpConnection,
 } from "./server/mailer.js";
 
@@ -292,9 +297,22 @@ async function startServer() {
       }
 
       const user = await getUserById(tokenObj.user_id);
-      if (!user || user.status !== "approved") {
+      if (!user) {
+        return res.status(403).json({ error: "User account not found." });
+      }
+
+      if (user.status === "locked") {
+        if (tokenObj.type === "unlock" || tokenObj.type === "magic_link") {
+          await unlockUser(user.id);
+          user.status = "approved";
+        } else {
+          return res.status(403).json({ error: "Your account is locked due to 10 failed PIN attempts. Please check your email for the unlock link." });
+        }
+      } else if (user.status !== "approved") {
         return res.status(403).json({ error: "User account is not active or approved." });
       }
+
+      await resetFailedPinAttempts(user.id);
 
       const session = await createSession(user.id);
       res.cookie("waifu_session", session.sessionId, {
@@ -324,11 +342,15 @@ async function startServer() {
         return res.status(400).json({ error: "Valid email and PIN (at least 4 characters) are required." });
       }
       let user = await getUserByEmail(email);
+      if (user && user.status === "locked") {
+        return res.status(403).json({ error: "Account is locked due to 10 failed PIN attempts. Please check your email for the unlock link." });
+      }
       if (!user) {
         user = await createUser(email, "admin", "approved", pin.trim());
       } else {
         await updateUserRole(user.id, "admin");
         await setUserPin(user.id, pin.trim());
+        await resetFailedPinAttempts(user.id);
       }
       const session = await createSession(user.id);
       res.cookie("waifu_session", session.sessionId, {
@@ -354,19 +376,47 @@ async function startServer() {
       }
       const cleanEmail = email.trim().toLowerCase();
       let user = await getUserByEmail(cleanEmail);
+
       if (!user) {
         user = await createUser(cleanEmail, "admin", "approved", pin.trim());
       } else {
+        if (user.status === "locked") {
+          return res.status(403).json({
+            error: "Account is locked due to 10 failed PIN attempts. Please check your email for the unlock link."
+          });
+        }
+
         if (user.role !== "admin") {
           await updateUserRole(user.id, "admin");
         }
+
         if (!user.pin) {
           await setUserPin(user.id, pin.trim());
         } else if (user.pin !== pin.trim()) {
-          await new Promise(resolve => setTimeout(resolve, 10000));
-          return res.status(401).json({ error: "Incorrect System Owner PIN. Paused for 10 seconds." });
+          const attempts = await incrementFailedPinAttempts(user.id);
+          if (attempts >= 10) {
+            await lockUser(user.id);
+            const { token: unlockToken } = await createAuthToken(user.id, "unlock");
+            const appUrl = `${req.protocol}://${req.get("host")}`;
+            const unlockUrl = `${appUrl}/?token=${unlockToken}`;
+            const mailRes = await sendAccountUnlockEmail(cleanEmail, unlockUrl);
+
+            return res.status(403).json({
+              error: mailRes.sent
+                ? "Incorrect PIN entered 10 times. Your account has been locked. An unlock link has been sent to your email address."
+                : `Incorrect PIN entered 10 times. Account is locked. (Failed to send email via SMTP: ${mailRes.error || mailRes.reason || "SMTP error"}).`
+            });
+          } else {
+            const remaining = 10 - attempts;
+            return res.status(401).json({
+              error: `Incorrect System Owner PIN. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before account lockout.`
+            });
+          }
         }
       }
+
+      await resetFailedPinAttempts(user.id);
+
       const session = await createSession(user.id);
       res.cookie("waifu_session", session.sessionId, {
         httpOnly: true,

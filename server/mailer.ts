@@ -94,6 +94,56 @@ export async function sendAdminPendingUserNotification(userEmail: string, appUrl
   }
 }
 
+export async function sendAccountUnlockEmail(toEmail: string, unlockUrl: string) {
+  const smtp = await getSmtpConfig();
+
+  if (!smtp || !smtp.host) {
+    console.log(`[Mailer] SMTP not configured. Account unlock link for ${toEmail}: ${unlockUrl}`);
+    return {
+      sent: false,
+      reason: "SMTP is not configured in Settings.",
+      unlockUrl,
+    };
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: smtp.authUser && smtp.authPass ? { user: smtp.authUser, pass: smtp.authPass } : undefined,
+      tls: { rejectUnauthorized: false },
+    });
+
+    const subject = "[Project Waifu] Security Alert: Account Locked";
+
+    const senderAddress = smtp.fromEmail?.trim() || smtp.authUser?.trim() || `"Project Waifu Security" <no-reply@${smtp.host}>`;
+
+    const info = await transporter.sendMail({
+      from: senderAddress,
+      to: toEmail,
+      subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #ef4444; border-radius: 12px; background: #0f172a; color: #f8fafc;">
+          <h2 style="color: #ef4444; margin-top: 0;">Account Locked</h2>
+          <p>Your System Owner account (<strong>${toEmail}</strong>) has been locked due to <strong>10 consecutive incorrect PIN attempts</strong>.</p>
+          <p>Click the button below to unlock your account and regain access:</p>
+          <div style="margin: 24px 0; text-align: center;">
+            <a href="${unlockUrl}" style="background-color: #ef4444; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">Unlock Account</a>
+          </div>
+          <p style="font-size: 12px; color: #94a3b8; margin-top: 24px;">If you did not initiate these login attempts, your account PIN was protected from unauthorized access.</p>
+        </div>
+      `,
+    });
+
+    console.log(`[Mailer] Account unlock email sent to ${toEmail}. MessageId: ${info.messageId}`);
+    return { sent: true, messageId: info.messageId };
+  } catch (err: any) {
+    console.error(`[Mailer] Failed to send unlock email to ${toEmail}:`, err);
+    return { sent: false, error: err.message, unlockUrl };
+  }
+}
+
 export async function testSmtpConnection(smtp: {
   host: string;
   port: number;
