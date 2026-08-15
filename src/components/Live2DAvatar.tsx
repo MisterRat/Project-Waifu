@@ -551,28 +551,24 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     const loadPixiModel = async () => {
       setLive2dStatus("loading");
       setLive2dError(null);
-      console.log("Live2D Avatar: Started loading");
-          addDebugLog("Started loading");
+      addDebugLog("Loading Live2D model...");
 
-      // Wait up to 5 seconds for PIXI & pixi-live2d-display to be ready on window
+      // Fast check for PIXI & pixi-live2d-display (check immediately, then micro-poll if needed)
       let attempts = 0;
       while (
-        attempts < 25 &&
+        attempts < 20 &&
         (!window.hasOwnProperty("PIXI") || !(window as any).PIXI?.live2d?.Live2DModel)
       ) {
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 50));
         attempts++;
       }
 
       const PIXI = (window as any).PIXI;
-      console.log("Live2D Avatar: PIXI check result - PIXI:", !!PIXI, "Live2DModel:", !!PIXI?.live2d?.Live2DModel);
-          addDebugLog("PIXI check result - PIXI:" + !!PIXI + " Live2DModel:" + !!PIXI?.live2d?.Live2DModel);
       if (!PIXI || !PIXI.live2d?.Live2DModel) {
         if (isSubscribed) {
-          console.log("Live2D Avatar: Aborting load because PIXI or Live2DModel is missing");
-          addDebugLog("Aborting load because PIXI or Live2DModel is missing");
+          addDebugLog("Live2D SDK or PixiJS not available on window");
           setLive2dStatus("error");
-          setLive2dError("Failed to load PIXI.js or Live2D Model dependencies. Check browser console.");
+          setLive2dError("Failed to load PIXI.js or Live2D Model dependencies.");
         }
         return;
       }
@@ -619,25 +615,38 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           PIXI.settings.PREFER_ENV = PIXI.ENV.WEBGL_LEGACY;
         }
 
-        addDebugLog("Creating PIXI Application...");
-        app = new PIXI.Application({
-          view: pixiCanvasRef.current,
-          autoStart: true,
-          backgroundAlpha: 0,
-          width,
-          height,
-          resolution: window.devicePixelRatio || 1,
-          autoDensity: true,
-          powerPreference: "default",
-          contextOptions: {
-            failIfMajorPerformanceCaveat: false,
-            preserveDrawingBuffer: true,
-          },
-        });
+        // Reuse existing PIXI application if already created for seamless instantaneous model swaps
+        if (!pixiAppRef.current) {
+          app = new PIXI.Application({
+            view: pixiCanvasRef.current,
+            autoStart: true,
+            backgroundAlpha: 0,
+            width,
+            height,
+            resolution: window.devicePixelRatio || 1,
+            autoDensity: true,
+            powerPreference: "high-performance",
+            contextOptions: {
+              failIfMajorPerformanceCaveat: false,
+              preserveDrawingBuffer: true,
+            },
+          });
+          pixiAppRef.current = app;
+        } else {
+          app = pixiAppRef.current;
+          // Clear any previous model from stage
+          if (live2dModelRef.current) {
+            try {
+              app.stage.removeChild(live2dModelRef.current);
+              live2dModelRef.current.destroy();
+            } catch (e) {}
+            live2dModelRef.current = null;
+          }
+        }
+
         const { actualModelUrl, urlResolver } = await resolveLive2DModelUrl(customModelUrl);
 
-        // Instantiate model from URL or Blob URL
-        addDebugLog("Loading model from URL: " + String(actualModelUrl).substring(0, 50));
+        // Instantiate model from URL or cached Blob URL
         model = await PIXI.live2d.Live2DModel.from(actualModelUrl, {
           autoInteract: true,
         });
@@ -650,12 +659,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         }
 
         if (!isSubscribed) {
-          model.destroy();
-          app.destroy(false, { children: true });
+          try {
+            model.destroy();
+          } catch (e) {}
           return;
         }
 
-        addDebugLog("Model created, adding to stage...");
         app.stage.addChild(model);
 
         // Calculate responsive scale safely and center model
@@ -716,16 +725,13 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       if (resizeObserver) resizeObserver.disconnect();
       if (model) {
         try {
+          if (app && app.stage) {
+            app.stage.removeChild(model);
+          }
           model.destroy();
         } catch (e) {}
       }
-      if (app) {
-        try {
-          app.destroy(false, { children: true });
-        } catch (e) {}
-      }
       live2dModelRef.current = null;
-      pixiAppRef.current = null;
     };
   }, [customModelUrl]);
 
@@ -1216,7 +1222,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             ) : live2dStatus === "loading" ? (
               <span className="text-amber-300 flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Unpacking Model...
+                Loading Model...
               </span>
             ) : (
               <span>Procedural Canvas Avatar</span>
