@@ -10,12 +10,12 @@ services:
     ports:
       - "3020:3000"
     volumes:
-      - waifu_data:/app/data
+      - ./data:/app/data
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - OPENWEBUI_BASE_URL=${OPENWEBUI_BASE_URL:-http://host.docker.internal:3000/api}
+      - OPENWEBUI_API_KEY=${OPENWEBUI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-volumes:
-  waifu_data:
