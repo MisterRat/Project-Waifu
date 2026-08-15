@@ -10,23 +10,50 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const DB_FILE = path.join(DATA_DIR, "app.db");
+const DB_TEMP_FILE = path.join(DATA_DIR, "app.db.tmp");
 
 let dbInstance: Database | null = null;
 
 function persistDb() {
   if (!dbInstance) return;
-  const data = dbInstance.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(DB_FILE, buffer);
+  try {
+    const data = dbInstance.export();
+    const buffer = Buffer.from(data);
+    // Write atomically via temporary file to prevent partial write corruptions
+    fs.writeFileSync(DB_TEMP_FILE, buffer);
+    fs.renameSync(DB_TEMP_FILE, DB_FILE);
+  } catch (err) {
+    console.error("Failed to persist SQLite database to disk:", err);
+  }
 }
 
 export async function getDb(): Promise<{ db: Database; save: () => void }> {
   if (!dbInstance) {
     const SQL = await initSqlJs();
+    let loadedFromDisk = false;
+
     if (fs.existsSync(DB_FILE)) {
-      const fileBuffer = fs.readFileSync(DB_FILE);
-      dbInstance = new SQL.Database(fileBuffer);
-    } else {
+      try {
+        const fileBuffer = fs.readFileSync(DB_FILE);
+        if (fileBuffer.length > 0) {
+          dbInstance = new SQL.Database(fileBuffer);
+          // Test database validity by running a quick PRAGMA check
+          dbInstance.exec("PRAGMA schema_version;");
+          loadedFromDisk = true;
+        }
+      } catch (err) {
+        console.error("Existing database file was corrupted or malformed. Backing up and auto-rebuilding a clean database:", err);
+        try {
+          const corruptBackup = path.join(DATA_DIR, `app_corrupt_${Date.now()}.db`);
+          fs.renameSync(DB_FILE, corruptBackup);
+        } catch (backupErr) {
+          console.error("Could not rename corrupted db:", backupErr);
+        }
+        dbInstance = null;
+      }
+    }
+
+    if (!loadedFromDisk || !dbInstance) {
       dbInstance = new SQL.Database();
     }
 

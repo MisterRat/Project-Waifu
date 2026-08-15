@@ -279,12 +279,43 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     setZipSuccessMsg(null);
 
     try {
+      // 1. Try uploading to server disk storage first (/models/...) for fast native static file serving
+      try {
+        const reader = new FileReader();
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const res = await fetch("/api/live2d/upload-zip", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, zipBase64: base64Data }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.modelUrl) {
+            setCustomModelUrl(data.modelUrl);
+            if (onModelUrlChange) {
+              onModelUrlChange(data.modelUrl);
+            }
+            setZipSuccessMsg(`Unpacked to server storage! (${data.fileCount} files ready)`);
+            return;
+          }
+        }
+      } catch (serverErr) {
+        console.warn("Server zip upload fallback to local indexed unpacked storage:", serverErr);
+      }
+
+      // 2. Fallback to client-side persistent unpacked storage
       const result = await loadLive2DFromZip(file, characterName.toLowerCase().replace(/\s+/g, "_"));
       setCustomModelUrl(result.modelUrl);
       if (onModelUrlChange) {
         onModelUrlChange(result.modelUrl);
       }
-      setZipSuccessMsg(`Unpacked "${file.name}" (${result.fileCount} model assets ready)`);
+      setZipSuccessMsg(`Unpacked & cached in local storage (${result.fileCount} model assets ready)`);
     } catch (err: any) {
       console.error("ZIP load error in canvas:", err);
       setZipErrorMsg(err.message || "Failed to unpack model ZIP file.");

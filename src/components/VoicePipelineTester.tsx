@@ -654,7 +654,7 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
           {showSaveSuccess && (
             <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 bg-emerald-950/90 border border-emerald-800/80 px-3.5 py-2 rounded-xl animate-bounce">
               <Check className="w-4 h-4 text-emerald-400" />
-              Settings Saved to LocalStorage!
+              Settings saved to database & local storage!
             </span>
           )}
 
