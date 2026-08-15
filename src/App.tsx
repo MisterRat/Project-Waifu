@@ -19,6 +19,7 @@ import {
   setActiveWaifuId,
   DEFAULT_WAIFU_PROFILES,
 } from "./lib/waifuStore";
+import pkg from "../package.json";
 import { Heart, Terminal, Radio, Mic, MessageSquare, Settings2, Menu, X, ChevronRight, Activity, Shield, UserCheck, Key, Mail } from "lucide-react";
 
 const DEFAULT_OPENWEBUI_CONFIG: OpenWebUIConfig = {
@@ -134,7 +135,9 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userCount, setUserCount] = useState<number>(0);
-  const [appVersion, setAppVersion] = useState<string>("v0.6.0 Beta");
+  const [hasOwner, setHasOwner] = useState<boolean>(false);
+  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string>(`v${pkg.version}`);
   const [authLoaded, setAuthLoaded] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
@@ -148,18 +151,28 @@ export default function App() {
 
   const fetchAuthMe = async () => {
     try {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const savedToken = localStorage.getItem("waifu_session_token") || "";
+      const headers: Record<string, string> = {};
+      if (savedToken) {
+        headers["Authorization"] = `Bearer ${savedToken}`;
+      }
+      const res = await fetch("/api/auth/me", {
+        headers,
+        credentials: "include",
+      });
       const data = await res.json();
       if (res.ok) {
         setUserCount(data.userCount || 0);
+        setHasOwner(Boolean(data.hasOwner));
+        if (data.ownerEmail) setOwnerEmail(data.ownerEmail);
         if (data.version) {
           setAppVersion(`v${data.version}`);
         }
+        if (data.settings) {
+          applyServerSettings(data.settings);
+        }
         if (data.user) {
           setCurrentUser(data.user);
-          if (data.settings) {
-            applyServerSettings(data.settings);
-          }
         }
       }
     } catch (e) {
@@ -179,7 +192,7 @@ export default function App() {
     if (settings.sttConfig) {
       setSTTConfigState(settings.sttConfig);
     }
-    if (settings.waifuProfiles && Array.isArray(settings.waifuProfiles)) {
+    if (settings.waifuProfiles && Array.isArray(settings.waifuProfiles) && settings.waifuProfiles.length > 0) {
       setProfiles(settings.waifuProfiles);
       saveWaifuProfiles(settings.waifuProfiles);
     }
@@ -190,20 +203,38 @@ export default function App() {
   };
 
   const syncSettingsToServer = async (overrides?: any) => {
-    if (!currentUser) return;
+    const payload = {
+      activeProfileId: overrides?.activeProfileId || activeProfileId,
+      waifuProfiles: overrides?.waifuProfiles || profiles,
+      ttsConfig: overrides?.ttsConfig || ttsConfig,
+      sttConfig: overrides?.sttConfig || sttConfig,
+      openwebuiConfig: overrides?.openwebuiConfig || openWebUIConfig,
+    };
+
+    const savedToken = localStorage.getItem("waifu_session_token") || "";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (savedToken) {
+      headers["Authorization"] = `Bearer ${savedToken}`;
+    }
+
     try {
-      await fetch("/api/user/settings", {
+      // Sync to system-level SQLite database
+      await fetch("/api/system/settings", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          activeProfileId: overrides?.activeProfileId || activeProfileId,
-          waifuProfiles: overrides?.waifuProfiles || profiles,
-          ttsConfig: overrides?.ttsConfig || ttsConfig,
-          sttConfig: overrides?.sttConfig || sttConfig,
-          openwebuiConfig: overrides?.openwebuiConfig || openWebUIConfig,
-        }),
+        headers,
+        body: JSON.stringify(payload),
         credentials: "include",
       });
+
+      // If user logged in, also sync to user_settings
+      if (currentUser) {
+        await fetch("/api/user/settings", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+          credentials: "include",
+        });
+      }
     } catch (e) {
       console.error("Failed to sync settings to server:", e);
     }
@@ -813,18 +844,30 @@ export default function App() {
         onClose={() => setIsAuthModalOpen(false)}
         currentUser={currentUser}
         userCount={userCount}
-        onLoginSuccess={(user, settings) => {
+        hasOwner={hasOwner}
+        ownerEmail={ownerEmail}
+        onLoginSuccess={(user, settings, sessionId) => {
           setCurrentUser(user);
+          if (sessionId) {
+            localStorage.setItem("waifu_session_token", sessionId);
+          }
           if (settings) {
             applyServerSettings(settings);
           }
+          fetchAuthMe();
         }}
         onLogout={async () => {
           try {
-            await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+            const savedToken = localStorage.getItem("waifu_session_token") || "";
+            await fetch("/api/auth/logout", {
+              method: "POST",
+              headers: savedToken ? { Authorization: `Bearer ${savedToken}` } : {},
+              credentials: "include",
+            });
           } catch (e) {
             console.error(e);
           }
+          localStorage.removeItem("waifu_session_token");
           setCurrentUser(null);
         }}
       />

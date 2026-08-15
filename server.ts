@@ -32,6 +32,9 @@ import {
   saveLive2dZip,
   getAllLive2dZips,
   deleteLive2dZip,
+  getPrimaryAdminUser,
+  getSystemSettings,
+  saveSystemSettings,
 } from "./server/db.js";
 import {
   sendMagicLinkEmail,
@@ -104,11 +107,17 @@ async function startServer() {
     try {
       const user = await getCurrentUser(req, res);
       const userCount = await getUserCount();
-      const settings = user ? await getUserSettings(user.id) : null;
+      const adminUser = await getPrimaryAdminUser();
+      const systemSettings = await getSystemSettings();
+      const userSettings = user ? await getUserSettings(user.id) : null;
+      const settings = userSettings || systemSettings;
+
       return res.json({
         user,
         settings,
         userCount,
+        hasOwner: Boolean(adminUser),
+        ownerEmail: adminUser?.email || null,
         version: appVersion,
       });
     } catch (err: any) {
@@ -358,9 +367,15 @@ async function startServer() {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         sameSite: "lax",
       });
-      const settings = await getUserSettings(user.id);
+      const settings = (await getUserSettings(user.id)) || (await getSystemSettings());
       const updatedUser = await getUserById(user.id);
-      return res.json({ status: "ok", message: "System Owner PIN saved successfully!", user: updatedUser, settings });
+      return res.json({
+        status: "ok",
+        message: "System Owner PIN saved successfully!",
+        user: updatedUser,
+        settings,
+        sessionId: session.sessionId,
+      });
     } catch (err: any) {
       console.error("Owner PIN error:", err);
       return res.status(500).json({ error: err.message });
@@ -423,9 +438,14 @@ async function startServer() {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         sameSite: "lax",
       });
-      const settings = await getUserSettings(user.id);
+      const settings = (await getUserSettings(user.id)) || (await getSystemSettings());
       const updatedUser = await getUserById(user.id);
-      return res.json({ status: "ok", user: updatedUser, settings });
+      return res.json({
+        status: "ok",
+        user: updatedUser,
+        settings,
+        sessionId: session.sessionId,
+      });
     } catch (err: any) {
       console.error("Owner PIN login error:", err);
       return res.status(500).json({ error: err.message });
@@ -447,6 +467,74 @@ async function startServer() {
     }
   });
 
+  // POST /api/auth/change-pin
+  app.post("/api/auth/change-pin", async (req, res) => {
+    try {
+      const user = await getCurrentUser(req);
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden. System Owner (admin) access required." });
+      }
+
+      const dbUser = await getUserById(user.id);
+
+      const { currentPin, newPin } = req.body;
+      if (!newPin || typeof newPin !== "string" || newPin.trim().length < 4) {
+        return res.status(400).json({ error: "New PIN must be at least 4 characters." });
+      }
+
+      if (dbUser && dbUser.pin && dbUser.pin !== currentPin) {
+        return res.status(401).json({ error: "Incorrect current PIN." });
+      }
+
+      await setUserPin(user.id, newPin.trim());
+      await resetFailedPinAttempts(user.id);
+
+      return res.json({ status: "ok", message: "System Owner PIN updated successfully!" });
+    } catch (err: any) {
+      console.error("Change PIN error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/system/settings - System-wide default configurations & personas
+  app.get("/api/system/settings", async (_req, res) => {
+    try {
+      const settings = await getSystemSettings();
+      return res.json({ settings });
+    } catch (err: any) {
+      console.error("Get system settings error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/system/settings - Update system-wide configuration
+  app.post("/api/system/settings", async (req, res) => {
+    try {
+      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig } = req.body;
+      await saveSystemSettings({
+        activeProfileId,
+        waifuProfiles,
+        ttsConfig,
+        sttConfig,
+        openwebuiConfig,
+      });
+      const user = await getCurrentUser(req);
+      if (user) {
+        await saveUserSettings(user.id, {
+          activeProfileId,
+          waifuProfiles,
+          ttsConfig,
+          sttConfig,
+          openwebuiConfig,
+        });
+      }
+      return res.json({ status: "ok", message: "System settings successfully persisted to SQLite database." });
+    } catch (err: any) {
+      console.error("Save system settings error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   // GET /api/user/settings
   app.get("/api/user/settings", async (req, res) => {
     try {
@@ -454,7 +542,7 @@ async function startServer() {
       if (!user) {
         return res.status(401).json({ error: "Unauthorized. Please log in." });
       }
-      const settings = await getUserSettings(user.id);
+      const settings = (await getUserSettings(user.id)) || (await getSystemSettings());
       return res.json({ settings });
     } catch (err: any) {
       console.error("Get user settings error:", err);
@@ -477,7 +565,15 @@ async function startServer() {
         sttConfig,
         openwebuiConfig,
       });
-      return res.json({ status: "ok", message: "User settings saved to server." });
+      // Also persist to system_config so reboot retains all personas and configs
+      await saveSystemSettings({
+        activeProfileId,
+        waifuProfiles,
+        ttsConfig,
+        sttConfig,
+        openwebuiConfig,
+      });
+      return res.json({ status: "ok", message: "User settings and system database updated." });
     } catch (err: any) {
       console.error("Save user settings error:", err);
       return res.status(500).json({ error: err.message });
@@ -680,54 +776,58 @@ async function startServer() {
   // Auto-extract assets/kei_en.zip if present and model3.json not yet extracted
   const defaultKeiZipPath = path.join(process.cwd(), "assets", "kei_en.zip");
   const keiFolderPath = path.join(MODELS_DIR, "kei");
-  const modelJsonCheckPath = path.join(keiFolderPath, "kei_basic_free", "runtime", "kei_basic_free.model3.json");
-  if (fs.existsSync(defaultKeiZipPath) && !fs.existsSync(modelJsonCheckPath)) {
-    try {
-      console.log("[Project Waifu] Extracting default Kei model from assets/kei_en.zip...");
-      const zipBuffer = fs.readFileSync(defaultKeiZipPath);
-      const zip = await JSZip.loadAsync(zipBuffer);
-      fs.mkdirSync(keiFolderPath, { recursive: true });
-      const zipKeys = Object.keys(zip.files);
-      for (const key of zipKeys) {
-        const entry = zip.files[key];
-        if (entry.dir) continue;
-        const outPath = path.join(keiFolderPath, key);
-        const parentDir = path.dirname(outPath);
-        if (!fs.existsSync(parentDir)) {
-          fs.mkdirSync(parentDir, { recursive: true });
+
+  const ensureModelExtracted = async (modelId: string): Promise<boolean> => {
+    const modelFolderPath = path.join(MODELS_DIR, modelId);
+    const checkModelJson = (dir: string): boolean => {
+      if (!fs.existsSync(dir)) return false;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (checkModelJson(full)) return true;
+        } else if (entry.isFile()) {
+          const lower = entry.name.toLowerCase();
+          if (lower.endsWith(".model3.json") || lower.endsWith(".model.json")) return true;
         }
-        const contentBuffer = await entry.async("nodebuffer");
-        fs.writeFileSync(outPath, contentBuffer);
       }
-      console.log("[Project Waifu] Successfully extracted default Kei model!");
-    } catch (err) {
-      console.error("[Project Waifu] Failed to extract kei_en.zip:", err);
+      return false;
+    };
+
+    if (checkModelJson(modelFolderPath)) {
+      return true;
     }
-  }
 
-  // Restore all models stored in SQLite database zips if not present on disk
-  try {
-    const savedZips = await getAllLive2dZips();
-    for (const z of savedZips) {
-      const modelFolderPath = path.join(MODELS_DIR, z.modelId);
-      const checkModelJson = (dir: string): boolean => {
-        if (!fs.existsSync(dir)) return false;
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const full = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            if (checkModelJson(full)) return true;
-          } else if (entry.isFile()) {
-            const lower = entry.name.toLowerCase();
-            if (lower.endsWith(".model3.json") || lower.endsWith(".model.json")) return true;
+    if (modelId === "kei" && fs.existsSync(defaultKeiZipPath)) {
+      try {
+        console.log("[Project Waifu] Extracting default Kei model from assets/kei_en.zip...");
+        const zipBuffer = fs.readFileSync(defaultKeiZipPath);
+        const zip = await JSZip.loadAsync(zipBuffer);
+        fs.mkdirSync(keiFolderPath, { recursive: true });
+        const zipKeys = Object.keys(zip.files);
+        for (const key of zipKeys) {
+          const entry = zip.files[key];
+          if (entry.dir) continue;
+          const outPath = path.join(keiFolderPath, key);
+          const parentDir = path.dirname(outPath);
+          if (!fs.existsSync(parentDir)) {
+            fs.mkdirSync(parentDir, { recursive: true });
           }
+          const contentBuffer = await entry.async("nodebuffer");
+          fs.writeFileSync(outPath, contentBuffer);
         }
-        return false;
-      };
+        return true;
+      } catch (err) {
+        console.error("[Project Waifu] Failed to extract kei_en.zip:", err);
+      }
+    }
 
-      if (!checkModelJson(modelFolderPath)) {
-        console.log(`[Project Waifu] Restoring Live2D model "${z.name}" (${z.modelId}) from SQLite database zip...`);
-        const buffer = Buffer.from(z.zipBase64, "base64");
+    try {
+      const savedZips = await getAllLive2dZips();
+      const zipRecord = savedZips.find((z) => z.modelId === modelId);
+      if (zipRecord && zipRecord.zipBase64) {
+        console.log(`[Project Waifu] Restoring Live2D model "${zipRecord.name}" (${zipRecord.modelId}) from SQLite database zip...`);
+        const buffer = Buffer.from(zipRecord.zipBase64, "base64");
         const zip = await JSZip.loadAsync(buffer);
         fs.mkdirSync(modelFolderPath, { recursive: true });
         const zipKeys = Object.keys(zip.files);
@@ -742,11 +842,40 @@ async function startServer() {
           const contentBuffer = await entry.async("nodebuffer");
           fs.writeFileSync(outPath, contentBuffer);
         }
+        return true;
       }
+    } catch (err) {
+      console.error(`[Project Waifu] Failed to restore model ${modelId} from DB zip:`, err);
+    }
+
+    return false;
+  };
+
+  // Restore all models stored in SQLite database on startup
+  try {
+    if (fs.existsSync(defaultKeiZipPath)) {
+      await ensureModelExtracted("kei");
+    }
+    const savedZips = await getAllLive2dZips();
+    for (const z of savedZips) {
+      await ensureModelExtracted(z.modelId);
     }
   } catch (err) {
-    console.error("[Project Waifu] Failed to restore Live2D zips from SQLite:", err);
+    console.error("[Project Waifu] Startup Live2D model restore error:", err);
   }
+
+  // Middleware to auto-extract missing model if requested via /models/:modelId
+  app.use("/models/:modelId", async (req, _res, next) => {
+    const modelId = req.params.modelId;
+    if (modelId) {
+      try {
+        await ensureModelExtracted(modelId);
+      } catch (e) {
+        console.warn(`Could not ensure model ${modelId} extracted:`, e);
+      }
+    }
+    next();
+  });
 
   // Serve models directory statically with CORS headers and appropriate MIME types
   app.use(
@@ -767,8 +896,16 @@ async function startServer() {
   app.get("/api/live2d/models", async (_req, res) => {
     try {
       if (!fs.existsSync(MODELS_DIR)) {
-        return res.json({ models: [] });
+        fs.mkdirSync(MODELS_DIR, { recursive: true });
       }
+
+      // Ensure default model and all DB-stored models are extracted
+      await ensureModelExtracted("kei");
+      const dbZips = await getAllLive2dZips();
+      for (const z of dbZips) {
+        await ensureModelExtracted(z.modelId);
+      }
+
       const folders = fs.readdirSync(MODELS_DIR).filter((f) => {
         const full = path.join(MODELS_DIR, f);
         return fs.statSync(full).isDirectory();

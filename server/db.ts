@@ -83,7 +83,15 @@ export async function getDb(): Promise<{ db: Database; save: () => void }> {
         model_id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         zip_base64 TEXT NOT NULL,
+        model_url TEXT,
+        rel_path TEXT,
         created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS system_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
       );
     `);
 
@@ -95,6 +103,18 @@ export async function getDb(): Promise<{ db: Database; save: () => void }> {
 
     try {
       dbInstance.run("ALTER TABLE users ADD COLUMN failed_pin_attempts INTEGER DEFAULT 0");
+    } catch (e) {
+      // Column may already exist
+    }
+
+    try {
+      dbInstance.run("ALTER TABLE live2d_zips ADD COLUMN model_url TEXT");
+    } catch (e) {
+      // Column may already exist
+    }
+
+    try {
+      dbInstance.run("ALTER TABLE live2d_zips ADD COLUMN rel_path TEXT");
     } catch (e) {
       // Column may already exist
     }
@@ -466,13 +486,97 @@ export async function saveSmtpConfig(config: {
   save();
 }
 
-export async function saveLive2dZip(modelId: string, name: string, zipBase64: string) {
+export async function getPrimaryAdminUser() {
+  const { db } = await getDb();
+  const stmt = db.prepare("SELECT * FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1");
+  if (stmt.step()) {
+    const row = stmt.getAsObject();
+    stmt.free();
+    return row as {
+      id: string;
+      email: string;
+      role: 'admin' | 'user';
+      status: 'pending' | 'approved' | 'rejected' | 'locked';
+      pin: string | null;
+      failed_pin_attempts?: number;
+      created_at: number;
+      last_login: number | null;
+    };
+  }
+  stmt.free();
+  return null;
+}
+
+export async function getSystemSettings() {
+  const { db } = await getDb();
+  const stmt = db.prepare("SELECT key, value FROM system_config");
+  const settings: {
+    activeProfileId: string | null;
+    waifuProfiles: any;
+    ttsConfig: any;
+    sttConfig: any;
+    openwebuiConfig: any;
+  } = {
+    activeProfileId: null,
+    waifuProfiles: null,
+    ttsConfig: null,
+    sttConfig: null,
+    openwebuiConfig: null,
+  };
+
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    const key = row.key as string;
+    const val = row.value as string;
+    try {
+      if (key === "active_profile_id") settings.activeProfileId = val;
+      if (key === "waifu_profiles") settings.waifuProfiles = JSON.parse(val);
+      if (key === "tts_config") settings.ttsConfig = JSON.parse(val);
+      if (key === "stt_config") settings.sttConfig = JSON.parse(val);
+      if (key === "openwebui_config") settings.openwebuiConfig = JSON.parse(val);
+    } catch (e) {
+      console.warn(`Failed parsing system_config key ${key}:`, e);
+    }
+  }
+  stmt.free();
+  return settings;
+}
+
+export async function saveSystemSettings(data: {
+  activeProfileId?: string;
+  waifuProfiles?: any;
+  ttsConfig?: any;
+  sttConfig?: any;
+  openwebuiConfig?: any;
+}) {
+  const { db, save } = await getDb();
+  const now = Date.now();
+
+  const setConfig = (key: string, value: string | null) => {
+    if (value !== null && value !== undefined) {
+      db.run(
+        "INSERT INTO system_config (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        [key, value, now]
+      );
+    }
+  };
+
+  if (data.activeProfileId !== undefined) setConfig("active_profile_id", data.activeProfileId);
+  if (data.waifuProfiles !== undefined) setConfig("waifu_profiles", JSON.stringify(data.waifuProfiles));
+  if (data.ttsConfig !== undefined) setConfig("tts_config", JSON.stringify(data.ttsConfig));
+  if (data.sttConfig !== undefined) setConfig("stt_config", JSON.stringify(data.sttConfig));
+  if (data.openwebuiConfig !== undefined) setConfig("openwebui_config", JSON.stringify(data.openwebuiConfig));
+
+  save();
+}
+
+export async function saveLive2dZip(modelId: string, name: string, zipBase64: string, modelUrl?: string, relPath?: string) {
   const { db, save } = await getDb();
   const now = Date.now();
   db.run(`
-    INSERT OR REPLACE INTO live2d_zips (model_id, name, zip_base64, created_at)
-    VALUES (?, ?, ?, ?)
-  `, [modelId, name, zipBase64, now]);
+    INSERT OR REPLACE INTO live2d_zips (model_id, name, zip_base64, model_url, rel_path, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `, [modelId, name, zipBase64, modelUrl || null, relPath || null, now]);
   save();
 }
 
@@ -486,6 +590,8 @@ export async function getAllLive2dZips() {
       modelId: row.model_id as string,
       name: row.name as string,
       zipBase64: row.zip_base64 as string,
+      modelUrl: (row.model_url as string) || null,
+      relPath: (row.rel_path as string) || null,
       createdAt: row.created_at as number,
     });
   }

@@ -7,7 +7,9 @@ interface AuthModalProps {
   onClose: () => void;
   currentUser: User | null;
   userCount: number;
-  onLoginSuccess: (user: User, settings?: any) => void;
+  hasOwner?: boolean;
+  ownerEmail?: string | null;
+  onLoginSuccess: (user: User, settings?: any, sessionId?: string) => void;
   onLogout: () => void;
 }
 
@@ -16,13 +18,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   currentUser,
   userCount,
+  hasOwner,
+  ownerEmail,
   onLoginSuccess,
   onLogout,
 }) => {
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(ownerEmail || "");
   const [ownerPin, setOwnerPin] = useState("");
   const [pinOrToken, setPinOrToken] = useState("");
-  const [authMode, setAuthMode] = useState<"magic" | "owner_pin">(userCount === 0 ? "owner_pin" : "magic");
+  const [authMode, setAuthMode] = useState<"magic" | "owner_pin">(
+    userCount === 0 || hasOwner ? "owner_pin" : "magic"
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -37,8 +43,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
     if (userCount === 0) {
       setAuthMode("owner_pin");
+    } else if (hasOwner && !email && ownerEmail) {
+      setEmail(ownerEmail);
     }
-  }, [userCount]);
+  }, [userCount, hasOwner, ownerEmail]);
 
   if (!isOpen) return null;
 
@@ -114,7 +122,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to set owner PIN.");
 
-      onLoginSuccess(data.user, data.settings);
+      onLoginSuccess(data.user, data.settings, data.sessionId);
       onClose();
     } catch (err: any) {
       setError(err.message || "Failed to setup System Owner PIN.");
@@ -143,7 +151,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Incorrect PIN or not an admin account.");
 
-      onLoginSuccess(data.user, data.settings);
+      onLoginSuccess(data.user, data.settings, data.sessionId);
       onClose();
     } catch (err: any) {
       setError(err.message || "Owner login failed.");

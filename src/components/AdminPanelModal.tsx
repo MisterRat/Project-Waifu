@@ -9,7 +9,7 @@ interface AdminPanelModalProps {
 }
 
 export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClose, currentUser }) => {
-  const [activeTab, setActiveTab] = useState<"users" | "smtp">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "smtp" | "pin">("users");
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -27,6 +27,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
   const [savingSmtp, setSavingSmtp] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [currentPin, setCurrentPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [savingPin, setSavingPin] = useState(false);
 
   // Load Users and SMTP on mount/tab change
   useEffect(() => {
@@ -207,6 +212,40 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     }
   };
 
+  const handlePinChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatusMessage(null);
+    if (!newPin || newPin.trim().length < 4) {
+      setStatusMessage({ type: "error", text: "New PIN must be at least 4 characters." });
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setStatusMessage({ type: "error", text: "New PIN and confirmation do not match." });
+      return;
+    }
+
+    setSavingPin(true);
+    try {
+      const res = await fetch("/api/auth/change-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPin, newPin }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update PIN.");
+
+      setStatusMessage({ type: "success", text: "System Owner PIN updated successfully!" });
+      setCurrentPin("");
+      setNewPin("");
+      setConfirmPin("");
+    } catch (err: any) {
+      setStatusMessage({ type: "error", text: err.message });
+    } finally {
+      setSavingPin(false);
+    }
+  };
+
   if (!isOpen || currentUser?.role !== "admin") return null;
 
   const pendingCount = users.filter((u) => u.status === "pending").length;
@@ -262,6 +301,18 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
           >
             <Mail className="w-4 h-4" />
             <span>Email & SMTP Config</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("pin")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition cursor-pointer ${
+              activeTab === "pin"
+                ? "border-pink-500 text-pink-400 bg-slate-900/80"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <KeyRound className="w-4 h-4" />
+            <span>Security & PIN</span>
           </button>
         </div>
 
@@ -388,7 +439,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                 </div>
               )}
             </div>
-          ) : (
+          ) : activeTab === "smtp" ? (
             <form onSubmit={handleSaveSmtp} className="space-y-4">
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400">
                 💡 <strong>Optional SMTP Setup:</strong> If SMTP is configured, Magic Links and Approval notifications will automatically be emailed to users and Admin. If left blank, direct Magic Links are safely displayed inside the UI!
@@ -500,6 +551,57 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                   className="flex items-center gap-2 px-5 py-2 bg-pink-600 hover:bg-pink-500 text-white font-semibold rounded-xl text-xs transition cursor-pointer disabled:opacity-50 shadow-lg shadow-pink-500/10"
                 >
                   {savingSmtp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save SMTP Settings"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handlePinChange} className="space-y-4">
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400">
+                🔒 <strong>System Owner Security:</strong> Update your Administrator PIN used for secure System Owner login.
+              </div>
+
+              <div className="space-y-3 max-w-md">
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1">Current PIN</label>
+                  <input
+                    type="password"
+                    value={currentPin}
+                    onChange={(e) => setCurrentPin(e.target.value)}
+                    placeholder="Enter current PIN"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-pink-500/60 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1">New PIN (at least 4 characters)</label>
+                  <input
+                    type="password"
+                    value={newPin}
+                    onChange={(e) => setNewPin(e.target.value)}
+                    placeholder="Enter new PIN"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-pink-500/60 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1">Confirm New PIN</label>
+                  <input
+                    type="password"
+                    value={confirmPin}
+                    onChange={(e) => setConfirmPin(e.target.value)}
+                    placeholder="Confirm new PIN"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-pink-500/60 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800 max-w-md">
+                <button
+                  type="submit"
+                  disabled={savingPin}
+                  className="flex items-center gap-2 px-5 py-2 bg-pink-600 hover:bg-pink-500 text-white font-semibold rounded-xl text-xs transition cursor-pointer disabled:opacity-50 shadow-lg shadow-pink-500/10"
+                >
+                  {savingPin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Update Owner PIN"}
                 </button>
               </div>
             </form>
