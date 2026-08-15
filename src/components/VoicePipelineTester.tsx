@@ -32,7 +32,8 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
     onTTSChange(ttsConfig);
     onSTTChange(sttConfig);
     try {
-      localStorage.setItem("project_waifu_tts_config", JSON.stringify(ttsConfig));
+      const sanitizedTTS = { ...ttsConfig, openaiApiKey: "" };
+      localStorage.setItem("project_waifu_tts_config", JSON.stringify(sanitizedTTS));
       localStorage.setItem("project_waifu_stt_config", JSON.stringify(sttConfig));
     } catch (err) {
       console.error("Failed to save STT/TTS config:", err);
@@ -85,7 +86,34 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
         return;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e: any) {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const audioInputs = devices.filter((d) => d.kind === "audioinput");
+          if (audioInputs.length > 0) {
+            for (const input of audioInputs) {
+              if (input.deviceId) {
+                try {
+                  stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { deviceId: input.deviceId },
+                  });
+                  if (stream) break;
+                } catch (subErr) {
+                  // continue
+                }
+              }
+            }
+          }
+        } catch (enumErr) {
+          // ignore
+        }
+
+        if (!stream) throw e;
+      }
+
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : MediaRecorder.isTypeSupported("audio/webm")
@@ -107,7 +135,7 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
 
       mediaRecorder.onstop = async () => {
         setIsListening(false);
-        stream.getTracks().forEach((track) => track.stop());
+        stream?.getTracks().forEach((track) => track.stop());
 
         if (audioChunks.length === 0) return;
         const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" });
@@ -161,7 +189,23 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
     } catch (err: any) {
       console.error("MediaRecorder error:", err);
       setIsListening(false);
-      alert("Microphone access error: " + (err.message || err));
+
+      if (
+        err.name === "NotFoundError" ||
+        err.message?.includes("The object can not be found here") ||
+        err.name === "DevicesNotFoundError"
+      ) {
+        alert(
+          "No microphone hardware was detected by Firefox.\n\n" +
+            "Even though website permission is Allowed, Firefox cannot find an active audio input device on your operating system.\n\n" +
+            "How to fix:\n" +
+            "1. Verify a microphone/headset is plugged in and recognized in your OS Sound Settings.\n" +
+            "2. Check OS privacy settings (e.g. Windows 'Microphone privacy settings' -> 'Allow apps/desktop apps to access your microphone', or macOS 'Security & Privacy -> Microphone -> Firefox').\n" +
+            "3. Restart Firefox after plugging in or enabling the microphone."
+        );
+      } else {
+        alert("Microphone access error: " + (err.message || err));
+      }
     }
   };
 

@@ -34,20 +34,24 @@ const DEFAULT_OPENWEBUI_CONFIG: OpenWebUIConfig = {
 const getInitialOpenWebUIConfig = (): OpenWebUIConfig => {
   if (typeof window === "undefined") return DEFAULT_OPENWEBUI_CONFIG;
   try {
+    // Purge any legacy cached API keys from localStorage
     const saved = localStorage.getItem("project_waifu_openwebui_config");
     if (saved) {
       const parsed = JSON.parse(saved);
+      if (parsed.apiKey) {
+        localStorage.removeItem("project_waifu_openwebui_config");
+      }
       return {
         enabled: parsed.enabled ?? true,
         baseUrl: typeof parsed.baseUrl === "string" ? parsed.baseUrl : DEFAULT_OPENWEBUI_CONFIG.baseUrl,
-        apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : "",
+        apiKey: "", // Never precache or restore API keys from browser storage
         model: typeof parsed.model === "string" ? parsed.model : DEFAULT_OPENWEBUI_CONFIG.model,
         systemPrompt: typeof parsed.systemPrompt === "string" ? parsed.systemPrompt : DEFAULT_OPENWEBUI_CONFIG.systemPrompt,
         useProxy: parsed.useProxy ?? true,
       };
     }
   } catch (e) {
-    console.error("Error loading openwebui_config from localStorage:", e);
+    console.error("Error loading openwebui_config:", e);
   }
   return DEFAULT_OPENWEBUI_CONFIG;
 };
@@ -69,9 +73,13 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
 const getInitialTTSConfig = (): TTSConfig => {
   if (typeof window === "undefined") return DEFAULT_TTS_CONFIG;
   try {
+    // Purge any legacy cached API keys from localStorage
     const saved = localStorage.getItem("project_waifu_tts_config");
     if (saved) {
       const parsed = JSON.parse(saved);
+      if (parsed.openaiApiKey) {
+        localStorage.removeItem("project_waifu_tts_config");
+      }
       return {
         enabled: parsed.enabled ?? true,
         provider: parsed.provider || DEFAULT_TTS_CONFIG.provider,
@@ -81,13 +89,13 @@ const getInitialTTSConfig = (): TTSConfig => {
         volume: typeof parsed.volume === "number" ? parsed.volume : 1.0,
         customServerUrl: parsed.customServerUrl || DEFAULT_TTS_CONFIG.customServerUrl,
         openaiBaseUrl: typeof parsed.openaiBaseUrl === "string" ? parsed.openaiBaseUrl : DEFAULT_TTS_CONFIG.openaiBaseUrl,
-        openaiApiKey: typeof parsed.openaiApiKey === "string" ? parsed.openaiApiKey : "",
+        openaiApiKey: "", // Never precache or restore API keys from browser storage
         openaiModel: typeof parsed.openaiModel === "string" ? parsed.openaiModel : DEFAULT_TTS_CONFIG.openaiModel,
         openaiVoice: typeof parsed.openaiVoice === "string" ? parsed.openaiVoice : DEFAULT_TTS_CONFIG.openaiVoice,
       };
     }
   } catch (e) {
-    console.error("Error loading tts_config from localStorage:", e);
+    console.error("Error loading tts_config:", e);
   }
   return DEFAULT_TTS_CONFIG;
 };
@@ -288,7 +296,9 @@ export default function App() {
     setOpenWebUIConfigState((prev) => {
       const updated = typeof newConfig === "function" ? newConfig(prev) : newConfig;
       try {
-        localStorage.setItem("project_waifu_openwebui_config", JSON.stringify(updated));
+        // Strip API key before any local preference caching
+        const sanitized = { ...updated, apiKey: "" };
+        localStorage.setItem("project_waifu_openwebui_config", JSON.stringify(sanitized));
       } catch (e) {
         console.error("Error saving openwebui_config to localStorage:", e);
       }
@@ -303,7 +313,9 @@ export default function App() {
     setTTSConfigState((prev) => {
       const updated = typeof newConfig === "function" ? newConfig(prev) : newConfig;
       try {
-        localStorage.setItem("project_waifu_tts_config", JSON.stringify(updated));
+        // Strip API key before any local preference caching
+        const sanitized = { ...updated, openaiApiKey: "" };
+        localStorage.setItem("project_waifu_tts_config", JSON.stringify(sanitized));
       } catch (e) {
         console.error("Error saving tts_config to localStorage:", e);
       }

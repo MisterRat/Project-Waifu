@@ -33,6 +33,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
   const [confirmPin, setConfirmPin] = useState("");
   const [savingPin, setSavingPin] = useState(false);
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const savedToken = localStorage.getItem("waifu_session_token") || "";
+    const headers: Record<string, string> = {};
+    if (savedToken) {
+      headers["Authorization"] = `Bearer ${savedToken}`;
+    }
+    return headers;
+  };
+
   // Load Users and SMTP on mount/tab change
   useEffect(() => {
     if (isOpen && currentUser?.role === "admin") {
@@ -44,7 +53,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
-      const res = await fetch("/api/admin/users", { credentials: "include" });
+      const res = await fetch("/api/admin/users", {
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
       const text = await res.text();
       let data: any = {};
       try {
@@ -67,7 +79,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
   const fetchSmtp = async () => {
     setLoadingSmtp(true);
     try {
-      const res = await fetch("/api/admin/smtp", { credentials: "include" });
+      // Clear any legacy client cache if present
+      try {
+        localStorage.removeItem("waifu_smtp_config_cache");
+      } catch (e) {}
+
+      const res = await fetch("/api/admin/smtp", {
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
       const text = await res.text();
       let data: any = {};
       try {
@@ -93,7 +113,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     setActionLoading(id);
     setStatusMessage(null);
     try {
-      const res = await fetch(`/api/admin/users/${id}/approve`, { method: "POST", credentials: "include" });
+      const res = await fetch(`/api/admin/users/${id}/approve`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Approval failed.");
 
@@ -113,7 +137,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     setActionLoading(id);
     setStatusMessage(null);
     try {
-      const res = await fetch(`/api/admin/users/${id}/reject`, { method: "POST", credentials: "include" });
+      const res = await fetch(`/api/admin/users/${id}/reject`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
       if (!res.ok) throw new Error("Rejection failed.");
       fetchUsers();
     } catch (err: any) {
@@ -128,7 +156,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     setActionLoading(id);
     setStatusMessage(null);
     try {
-      const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/admin/users/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Deletion failed.");
       fetchUsers();
@@ -145,7 +177,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     try {
       const res = await fetch(`/api/admin/users/${id}/role`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ role: newRole }),
         credentials: "include",
       });
@@ -165,7 +197,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     try {
       const res = await fetch("/api/admin/smtp", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify(smtp),
         credentials: "include",
       });
@@ -180,7 +212,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
         throw new Error(text || "Server error occurred while saving SMTP.");
       }
       if (!res.ok) throw new Error(data.error || "Failed to save SMTP.");
-      setStatusMessage({ type: "success", text: "SMTP configuration saved successfully!" });
+
+      setStatusMessage({ type: "success", text: "SMTP configuration successfully saved to server database!" });
     } catch (err: any) {
       setStatusMessage({ type: "error", text: err.message });
     } finally {
@@ -192,7 +225,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     setTestingSmtp(true);
     setStatusMessage(null);
     try {
-      const res = await fetch("/api/admin/smtp/test", { method: "POST", credentials: "include" });
+      const res = await fetch("/api/admin/smtp/test", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
       const text = await res.text();
       let data: any = {};
       try {
@@ -228,7 +265,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     try {
       const res = await fetch("/api/auth/change-pin", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ currentPin, newPin }),
         credentials: "include",
       });

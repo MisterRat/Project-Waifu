@@ -477,21 +477,64 @@ export async function saveUserSettings(userId: string, data: {
 // SMTP Config
 export async function getSmtpConfig() {
   const { db } = await getDb();
+  
+  // 1. Check dedicated smtp_config table
   const stmt = db.prepare("SELECT * FROM smtp_config WHERE id = 'default'");
   if (stmt.step()) {
     const row = stmt.getAsObject();
     stmt.free();
-    return {
-      host: row.host as string,
+    const config = {
+      host: (row.host as string) || "",
       port: Number(row.port) || 587,
       secure: Boolean(row.secure),
-      authUser: row.auth_user as string,
-      authPass: row.auth_pass as string,
-      fromEmail: row.from_email as string,
-      adminEmail: row.admin_email as string,
+      authUser: (row.auth_user as string) || "",
+      authPass: (row.auth_pass as string) || "",
+      fromEmail: (row.from_email as string) || "",
+      adminEmail: (row.admin_email as string) || "",
+    };
+    if (config.host || config.authUser || config.fromEmail || config.adminEmail) {
+      return config;
+    }
+  } else {
+    stmt.free();
+  }
+
+  // 2. Check system_config table fallback
+  const sysStmt = db.prepare("SELECT value FROM system_config WHERE key = 'smtp_config'");
+  if (sysStmt.step()) {
+    const val = sysStmt.getAsObject().value as string;
+    sysStmt.free();
+    try {
+      const parsed = JSON.parse(val);
+      if (parsed && (parsed.host || parsed.authUser || parsed.fromEmail || parsed.adminEmail)) {
+        return {
+          host: parsed.host || "",
+          port: Number(parsed.port) || 587,
+          secure: Boolean(parsed.secure),
+          authUser: parsed.authUser || "",
+          authPass: parsed.authPass || "",
+          fromEmail: parsed.fromEmail || "",
+          adminEmail: parsed.adminEmail || "",
+        };
+      }
+    } catch (e) {}
+  } else {
+    sysStmt.free();
+  }
+
+  // 3. Check environment variables
+  if (process.env.SMTP_HOST) {
+    return {
+      host: process.env.SMTP_HOST || "",
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true" || process.env.SMTP_SECURE === "1",
+      authUser: process.env.SMTP_USER || "",
+      authPass: process.env.SMTP_PASS || "",
+      fromEmail: process.env.SMTP_FROM || "",
+      adminEmail: process.env.SMTP_ADMIN_EMAIL || "",
     };
   }
-  stmt.free();
+
   return null;
 }
 
@@ -506,10 +549,28 @@ export async function saveSmtpConfig(config: {
 }) {
   const { db, save } = await getDb();
   const now = Date.now();
+
+  // 1. Save to dedicated smtp_config table
   db.run(`
-    INSERT OR REPLACE INTO smtp_config (id, host, port, secure, auth_user, auth_pass, from_email, admin_email, updated_at)
+    INSERT INTO smtp_config (id, host, port, secure, auth_user, auth_pass, from_email, admin_email, updated_at)
     VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      host = excluded.host,
+      port = excluded.port,
+      secure = excluded.secure,
+      auth_user = excluded.auth_user,
+      auth_pass = excluded.auth_pass,
+      from_email = excluded.from_email,
+      admin_email = excluded.admin_email,
+      updated_at = excluded.updated_at
   `, [config.host, config.port, config.secure ? 1 : 0, config.authUser, config.authPass, config.fromEmail, config.adminEmail, now]);
+
+  // 2. Also save to system_config table for redundant backup across reboots
+  db.run(
+    "INSERT INTO system_config (key, value, updated_at) VALUES ('smtp_config', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    [JSON.stringify(config), now]
+  );
+
   save();
 }
 

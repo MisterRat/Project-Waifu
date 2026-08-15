@@ -324,7 +324,34 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         return;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e: any) {
+        // Attempt fallback with explicit device enumeration if generic audio: true failed in Firefox
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const audioInputs = devices.filter((d) => d.kind === "audioinput");
+          if (audioInputs.length > 0) {
+            for (const input of audioInputs) {
+              if (input.deviceId) {
+                try {
+                  stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { deviceId: input.deviceId },
+                  });
+                  if (stream) break;
+                } catch (subErr) {
+                  // continue trying
+                }
+              }
+            }
+          }
+        } catch (enumErr) {
+          // ignore
+        }
+
+        if (!stream) throw e;
+      }
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : MediaRecorder.isTypeSupported("audio/webm")
@@ -346,7 +373,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
 
       mediaRecorder.onstop = async () => {
         setIsListening(false);
-        stream.getTracks().forEach((track) => track.stop());
+        stream?.getTracks().forEach((track) => track.stop());
 
         if (audioChunks.length === 0) return;
         const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" });
@@ -401,7 +428,31 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
     } catch (err: any) {
       console.error("MediaRecorder start error:", err);
       setIsListening(false);
-      alert("Microphone access was denied or is blocked by browser permissions: " + (err.message || err));
+
+      if (
+        err.name === "NotFoundError" ||
+        err.message?.includes("The object can not be found here") ||
+        err.name === "DevicesNotFoundError"
+      ) {
+        alert(
+          "No microphone hardware was detected by Firefox.\n\n" +
+            "Even though website permission is Allowed, Firefox cannot find an active audio input device on your operating system.\n\n" +
+            "How to fix:\n" +
+            "1. Verify a microphone/headset is plugged in and recognized in your OS Sound Settings.\n" +
+            "2. Check OS privacy settings (e.g. Windows 'Microphone privacy settings' -> 'Allow apps/desktop apps to access your microphone', or macOS 'Security & Privacy -> Microphone -> Firefox').\n" +
+            "3. Restart Firefox after plugging in or enabling the microphone."
+        );
+      } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        alert(
+          "Microphone access was denied. Please click the permissions icon next to the URL bar in Firefox and ensure Microphone is set to 'Allow'."
+        );
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        alert(
+          "Microphone is currently in use or locked by another application. Please close other recording programs and try again."
+        );
+      } else {
+        alert("Microphone error: " + (err.message || err));
+      }
     }
   };
 
