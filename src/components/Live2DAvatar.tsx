@@ -4,7 +4,6 @@ import { loadLive2DFromZip, resolveLive2DModelUrl } from "../lib/live2dZipLoader
 import {
   createInitialTrackingState,
   stepTrackingState,
-  applyLive2DMultiJointKinematics,
   TrackingState,
 } from "../lib/live2dTrackingEngine";
 import {
@@ -25,7 +24,6 @@ import {
   Flame,
   MinusCircle,
   Eye,
-  Activity,
   Hand,
   RotateCw,
 } from "lucide-react";
@@ -121,7 +119,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   };
 
   const [isDraggingWindow, setIsDraggingWindow] = useState(false);
-  const [showPhysicsPopover, setShowPhysicsPopover] = useState(false);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [mouthOpenRatio, setMouthOpenRatio] = useState(0);
   const [activeMotion, setActiveMotion] = useState<MotionType>(motion || "none");
@@ -746,237 +743,143 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         app.stage.addChild(model);
 
-        // Continuous 60 FPS Multi-Joint Kinematics & Inertia Jiggle Physics Driver
-        const internalModel = model.internalModel;
-        if (internalModel) {
-          const originalInternalUpdate =
-            typeof internalModel.update === "function" ? internalModel.update.bind(internalModel) : null;
+        // Frame update loop for interactive tracking, lip-sync, and emotion expressions
+        const updateFrame = () => {
+          if (!live2dModelRef.current) return;
+          const currentModel = live2dModelRef.current;
+          const core = currentModel.internalModel?.coreModel;
 
-          internalModel.update = function (delta: number, now: number) {
-            if (originalInternalUpdate) {
-              try {
-                originalInternalUpdate(delta, now);
-              } catch (e) {}
-            }
+          // 1. Motion curve calculation & procedural offsets
+          let motionOffsetX = 0;
+          let motionOffsetY = 0;
+          let motionMouthOpen = 0;
+          let motionEyeLClose = false;
 
-            const core = this.coreModel;
-            if (!core) return;
+          if (activeMotionRef.current !== "none" && motionStartTimeRef.current) {
+            const elapsed = (Date.now() - motionStartTimeRef.current) / 1000;
+            const duration = 4.0;
 
-            const dt = Math.min(0.05, Math.max(0.001, (delta || 16.6) / 1000));
+            if (elapsed >= duration) {
+              setActiveMotion("none");
+              motionStartTimeRef.current = null;
+              if (onMotionTrigger) {
+                onMotionTrigger("none");
+              }
+            } else {
+              const progress = elapsed / duration;
+              const pRad = progress * Math.PI;
 
-            // 1. Step damped spring tracking state with mouse target and window dragging impulses
-            trackingStateRef.current = stepTrackingState(
-              trackingStateRef.current,
-              mouseTargetRef.current.x,
-              mouseTargetRef.current.y,
-              dt,
-              physicsIntensityRef.current,
-              dragDeltaRef.current.dx,
-              dragDeltaRef.current.dy
-            );
-            dragDeltaRef.current = { dx: 0, dy: 0 };
-
-            // 2. Active motion curve calculation
-            let motionAngleX = 0;
-            let motionAngleY = 0;
-            let motionAngleZ = 0;
-            let motionBodyAngleZ = 0;
-            let motionMouthOpen = 0;
-            let motionEyeLOpenOverride: number | null = null;
-            let motionEyeBallXOverride: number | null = null;
-            let motionEyeBallYOverride: number | null = null;
-
-            if (activeMotionRef.current !== "none" && motionStartTimeRef.current) {
-              const elapsed = (Date.now() - motionStartTimeRef.current) / 1000;
-              const duration = 5.0;
-
-              if (elapsed >= duration) {
-                setActiveMotion("none");
-                motionStartTimeRef.current = null;
-                if (onMotionTrigger) {
-                  onMotionTrigger("none");
-                }
-              } else {
-                const progress = elapsed / duration;
-                const pRad = progress * Math.PI;
-
-                switch (activeMotionRef.current) {
-                  case "nod":
-                    motionAngleY = Math.sin(progress * Math.PI * 2) * 18;
-                    break;
-                  case "shake":
-                    motionAngleX = Math.sin(progress * Math.PI * 3) * 22;
-                    break;
-                  case "wave":
-                    motionAngleZ = Math.sin(progress * Math.PI * 2) * 16;
-                    motionBodyAngleZ = Math.sin(progress * Math.PI * 2) * 8;
-                    break;
-                  case "bow":
-                    motionAngleY = -Math.sin(pRad) * 25;
-                    break;
-                  case "laugh":
-                    motionAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 12;
-                    motionMouthOpen = 0.4;
-                    break;
-                  case "wink":
-                    if (progress < 0.75) {
-                      motionEyeLOpenOverride = 0;
-                    }
-                    break;
-                  case "check_nails":
-                    motionAngleX = Math.sin(pRad) * 20;
-                    motionAngleY = -Math.sin(pRad) * 16;
-                    motionAngleZ = -Math.sin(pRad) * 12;
-                    motionEyeBallXOverride = Math.sin(pRad) * 0.8;
-                    motionEyeBallYOverride = -Math.sin(pRad) * 0.8;
-                    break;
-                  case "jiggle_dance":
-                    motionAngleZ = Math.sin(progress * Math.PI * 6) * 16;
-                    motionBodyAngleZ = Math.sin(progress * Math.PI * 6) * 12;
-                    motionAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 8;
-                    break;
-                  case "sigh_tilt":
-                    motionAngleZ = Math.sin(pRad) * 18;
-                    motionAngleY = Math.sin(pRad) * 14;
-                    motionMouthOpen = Math.sin(pRad) * 0.25;
-                    break;
-                  case "curious_glance":
-                    motionAngleX = Math.sin(progress * Math.PI * 2) * 22;
-                    motionAngleZ = Math.sin(progress * Math.PI) * 12;
-                    motionEyeBallXOverride = Math.sin(progress * Math.PI * 2) * 0.85;
-                    break;
-                  case "stretch_wave":
-                    motionAngleY = Math.sin(pRad) * 18;
-                    motionBodyAngleZ = Math.sin(pRad) * 10;
-                    break;
-                }
+              switch (activeMotionRef.current) {
+                case "nod":
+                  motionOffsetY = Math.sin(progress * Math.PI * 3) * 0.5;
+                  break;
+                case "shake":
+                  motionOffsetX = Math.sin(progress * Math.PI * 4) * 0.6;
+                  break;
+                case "wave":
+                  motionOffsetX = Math.sin(progress * Math.PI * 2) * 0.4;
+                  break;
+                case "bow":
+                  motionOffsetY = -Math.sin(pRad) * 0.8;
+                  break;
+                case "laugh":
+                  motionOffsetY = Math.abs(Math.sin(progress * Math.PI * 6)) * 0.3;
+                  motionMouthOpen = 0.4;
+                  break;
+                case "wink":
+                  if (progress < 0.7) {
+                    motionEyeLClose = true;
+                  }
+                  break;
+                case "check_nails":
+                  motionOffsetX = Math.sin(pRad) * 0.5;
+                  motionOffsetY = -Math.sin(pRad) * 0.4;
+                  break;
+                case "jiggle_dance":
+                  motionOffsetX = Math.sin(progress * Math.PI * 5) * 0.5;
+                  motionOffsetY = Math.abs(Math.sin(progress * Math.PI * 5)) * 0.25;
+                  break;
+                case "sigh_tilt":
+                  motionOffsetY = Math.sin(pRad) * 0.4;
+                  motionMouthOpen = Math.sin(pRad) * 0.2;
+                  break;
+                case "curious_glance":
+                  motionOffsetX = Math.sin(progress * Math.PI * 2) * 0.6;
+                  break;
+                case "stretch_wave":
+                  motionOffsetY = Math.sin(pRad) * 0.4;
+                  break;
               }
             }
+          }
 
-            // 3. Evaluate emotion parameters
-            let mouthForm = 0;
-            let cheekBlush = 0;
-            let browLY = 0;
-            let browRY = 0;
-            let browAngle = 0;
-            let eyeLOpen = 1.0;
-            let eyeROpen = 1.0;
+          // 2. Direct Live2D native focus controller (this drives head yaw/pitch/roll and triggers authentic Live2D physics)
+          const targetX = isSpeakingRef.current
+            ? motionOffsetX
+            : Math.max(-1.5, Math.min(1.5, mouseTargetRef.current.x + motionOffsetX + dragDeltaRef.current.dx * 0.04));
+          const targetY = isSpeakingRef.current
+            ? motionOffsetY
+            : Math.max(-1.5, Math.min(1.5, mouseTargetRef.current.y + motionOffsetY + dragDeltaRef.current.dy * 0.04));
+          dragDeltaRef.current = { dx: 0, dy: 0 };
 
-            switch (emotionRef.current) {
-              case "happy":
-                mouthForm = 1.0;
-                cheekBlush = 0.3;
-                browLY = 0.2;
-                browRY = 0.2;
-                break;
-              case "blush":
-                mouthForm = 0.8;
-                cheekBlush = 1.0;
-                browLY = 0.1;
-                browRY = 0.1;
-                break;
-              case "excited":
-                mouthForm = 1.0;
-                cheekBlush = 0.8;
-                eyeLOpen = 1.3;
-                eyeROpen = 1.3;
-                browLY = 0.6;
-                browRY = 0.6;
-                break;
-              case "surprised":
-                mouthForm = 0.0;
-                eyeLOpen = 1.4;
-                eyeROpen = 1.4;
-                browLY = 0.8;
-                browRY = 0.8;
-                break;
-              case "sad":
-                mouthForm = -1.0;
-                cheekBlush = 0.0;
-                browLY = -0.7;
-                browRY = -0.7;
-                browAngle = -0.4;
-                eyeLOpen = 0.8;
-                eyeROpen = 0.8;
-                break;
-              case "angry":
-                mouthForm = -0.8;
-                cheekBlush = 0.0;
-                browLY = -0.8;
-                browRY = -0.8;
-                browAngle = 0.6;
-                eyeLOpen = 0.9;
-                eyeROpen = 0.9;
-                break;
-              case "thinking":
-                mouthForm = 0.2;
-                browLY = 0.6;
-                browRY = -0.3;
-                eyeLOpen = 0.85;
-                eyeROpen = 0.85;
-                break;
-              case "wink":
-                mouthForm = 0.8;
-                cheekBlush = 0.6;
-                eyeLOpen = 0.0;
-                eyeROpen = 1.0;
-                break;
-              case "neutral":
-              default:
-                mouthForm = 0.0;
-                cheekBlush = 0.0;
-                browLY = 0.0;
-                browRY = 0.0;
-                break;
-            }
+          if (typeof currentModel.focus === "function") {
+            currentModel.focus(targetX, -targetY);
+          }
 
-            if (motionEyeLOpenOverride !== null) {
-              eyeLOpen = motionEyeLOpenOverride;
-            }
-
-            // 4. Inject multi-joint angle coupling and secondary physics jiggle
-            applyLive2DMultiJointKinematics(
-              core,
-              trackingStateRef.current,
-              {
-                targetX: mouseTargetRef.current.x,
-                targetY: mouseTargetRef.current.y,
-                deltaTime: dt,
-                physicsIntensity: physicsIntensityRef.current,
-                emotionMouthForm: mouthForm,
-                emotionCheek: cheekBlush,
-                emotionEyeLOpen: eyeLOpen,
-                emotionEyeROpen: eyeROpen,
-                emotionBrowLY: browLY,
-                emotionBrowRY: browRY,
-                emotionBrowAngle: browAngle,
-                motionAngleX,
-                motionAngleY,
-                motionAngleZ,
-                motionBodyAngleZ,
-                motionMouthOpen,
-                mouthOpenRatio: mouthOpenRatioRef.current,
-                isSpeaking: isSpeakingRef.current,
-              },
-              performance.now()
-            );
-
-            // 5. Update native Live2D physics engine with responsive inertia
-            if (this.physics && typeof this.physics.update === "function") {
+          // 3. Apply Lip Sync & Facial Expressions to core model
+          if (core) {
+            const setParam = (idC4: string, idC2: string, val: number) => {
               try {
-                const physicsDt = dt * (1.0 + physicsIntensityRef.current * 0.5);
-                this.physics.update(this.coreModel, physicsDt);
+                if (typeof core.setParameterValueById === "function") {
+                  core.setParameterValueById(idC4, val);
+                } else if (typeof core.setParamFloat === "function") {
+                  core.setParamFloat(idC2, val);
+                }
               } catch (e) {}
+            };
+
+            // Mouth Open
+            const mouthVal = Math.max(mouthOpenRatioRef.current || 0, motionMouthOpen, isSpeakingRef.current ? 0.35 : 0);
+            if (mouthVal > 0) {
+              setParam("ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y", mouthVal);
             }
 
-            // 6. Force core deformer and mesh geometry update for WebGL rendering
-            if (typeof core.update === "function") {
-              try {
-                core.update();
-              } catch (e) {}
+            // Emotion Parameters
+            const em = emotionRef.current;
+            if (em === "happy") {
+              setParam("ParamMouthForm", "PARAM_MOUTH_FORM", 1.0);
+              setParam("ParamCheek", "PARAM_CHEEK", 0.35);
+            } else if (em === "blush") {
+              setParam("ParamMouthForm", "PARAM_MOUTH_FORM", 0.8);
+              setParam("ParamCheek", "PARAM_CHEEK", 0.9);
+            } else if (em === "excited") {
+              setParam("ParamMouthForm", "PARAM_MOUTH_FORM", 1.0);
+              setParam("ParamCheek", "PARAM_CHEEK", 0.7);
+              setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", 1.2);
+              setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", 1.2);
+            } else if (em === "surprised") {
+              setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", 1.3);
+              setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", 1.3);
+              setParam("ParamBrowLY", "PARAM_BROW_L_Y", 0.8);
+              setParam("ParamBrowRY", "PARAM_BROW_R_Y", 0.8);
+            } else if (em === "sad") {
+              setParam("ParamMouthForm", "PARAM_MOUTH_FORM", -1.0);
+              setParam("ParamBrowLY", "PARAM_BROW_L_Y", -0.7);
+              setParam("ParamBrowRY", "PARAM_BROW_R_Y", -0.7);
+            } else if (em === "angry") {
+              setParam("ParamMouthForm", "PARAM_MOUTH_FORM", -0.8);
+              setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", 0.6);
+              setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", 0.6);
+            } else if (em === "wink" || motionEyeLClose) {
+              setParam("ParamMouthForm", "PARAM_MOUTH_FORM", 0.8);
+              setParam("ParamCheek", "PARAM_CHEEK", 0.6);
+              setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", 0.0);
+              if (em === "wink") setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", 1.0);
             }
-          };
-        }
+          }
+        };
+
+        app.ticker.add(updateFrame);
 
         // Calculate responsive scale safely and center model
         const mWidth = (model.width && !isNaN(model.width) && model.width > 0) ? model.width : 400;
@@ -1326,109 +1229,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             }`}
           ></span>
           <span className="font-bold text-sm text-slate-100 font-serif italic">{characterName}</span>
-          <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-900 text-slate-300 border border-slate-800 font-mono flex items-center gap-1 hidden sm:flex">
-            {live2dStatus === "active" ? (
-              <span className="text-emerald-400 font-bold">✓ Live2D Cubism WebGL</span>
-            ) : live2dStatus === "loading" ? (
-              <span className="text-amber-300 flex items-center gap-1">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Loading Model...
-              </span>
-            ) : (
-              <span>Procedural Canvas Avatar</span>
-            )}
-          </span>
-        </div>
-
-        {/* Physics Intensity Quick Control Popover */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowPhysicsPopover(!showPhysicsPopover);
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className={`px-2.5 py-1 rounded-xl border text-[11px] font-mono flex items-center gap-1.5 transition ${
-              (physicsIntensity ?? 1.0) === 0
-                ? "bg-slate-900 border-slate-700 text-slate-400"
-                : (physicsIntensity ?? 1.0) > 1.4
-                ? "bg-amber-500/20 border-amber-500/40 text-amber-300 font-bold"
-                : "bg-violet-500/20 border-violet-500/40 text-violet-300 font-semibold"
-            } hover:scale-105 active:scale-95 shadow-sm`}
-            title="Adjust Live2D Physics & Jiggle Intensity"
-          >
-            <Activity className="w-3.5 h-3.5 text-violet-400" />
-            <span>{(physicsIntensity ?? 1.0).toFixed(1)}x Physics</span>
-          </button>
-
-          {showPhysicsPopover && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="absolute right-0 top-full mt-2 w-72 bg-slate-950/95 border border-slate-800 rounded-2xl p-3.5 shadow-2xl backdrop-blur-xl z-50 space-y-3"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-violet-400" />
-                  Physics & Jiggle
-                </span>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 font-bold">
-                  {(physicsIntensity ?? 1.0).toFixed(1)}x
-                </span>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-500 font-mono">0.0x</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2.5"
-                    step="0.1"
-                    value={physicsIntensity ?? 1.0}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      physicsIntensityRef.current = val;
-                      if (onPhysicsIntensityChange) onPhysicsIntensityChange(val);
-                    }}
-                    className="flex-1 accent-violet-500 h-2 bg-slate-900 rounded-lg cursor-pointer"
-                  />
-                  <span className="text-[10px] text-slate-500 font-mono">2.5x</span>
-                </div>
-
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {[
-                    { label: "Off (0x)", val: 0.0 },
-                    { label: "Subtle (0.5x)", val: 0.5 },
-                    { label: "Standard (1.0x)", val: 1.0 },
-                    { label: "Lively (1.5x)", val: 1.5 },
-                    { label: "Bouncy (2.0x)", val: 2.0 },
-                  ].map((preset) => (
-                    <button
-                      key={preset.val}
-                      type="button"
-                      onClick={() => {
-                        physicsIntensityRef.current = preset.val;
-                        if (onPhysicsIntensityChange) onPhysicsIntensityChange(preset.val);
-                      }}
-                      className={`text-[10px] px-2 py-0.5 rounded-lg border transition ${
-                        (physicsIntensity ?? 1.0) === preset.val
-                          ? "bg-violet-600/30 border-violet-400 text-violet-200 font-bold"
-                          : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-                      }`}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <span className="text-[9.5px] text-slate-500 block leading-tight">
-                Instantly scales spring jiggle for hair, bust, clothes, accessories, and inertia bounce on the loaded model.
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
