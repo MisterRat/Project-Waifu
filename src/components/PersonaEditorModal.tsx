@@ -496,9 +496,14 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
                     max="2.5"
                     step="0.1"
                     value={formData.physicsIntensity ?? 1.0}
-                    onChange={(e) =>
-                      setFormData({ ...formData, physicsIntensity: parseFloat(e.target.value) })
-                    }
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      const updated = { ...formData, physicsIntensity: val };
+                      setFormData(updated);
+                      if (onSaveProfile && !isCreatingNew) {
+                        onSaveProfile(updated);
+                      }
+                    }}
                     className="flex-1 accent-violet-500 h-2 bg-slate-900 rounded-lg cursor-pointer"
                   />
                   <span className="text-[11px] text-slate-400 font-mono w-8">2.5x</span>
@@ -515,7 +520,13 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
                     <button
                       key={preset.val}
                       type="button"
-                      onClick={() => setFormData({ ...formData, physicsIntensity: preset.val })}
+                      onClick={() => {
+                        const updated = { ...formData, physicsIntensity: preset.val };
+                        setFormData(updated);
+                        if (onSaveProfile && !isCreatingNew) {
+                          onSaveProfile(updated);
+                        }
+                      }}
                       className={`text-[10px] px-2.5 py-1 rounded-lg border transition ${
                         (formData.physicsIntensity ?? 1.0) === preset.val
                           ? "bg-violet-600/30 border-violet-400 text-violet-200 font-bold shadow-sm"

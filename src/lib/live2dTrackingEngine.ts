@@ -239,5 +239,17 @@ export function applyLive2DMultiJointKinematics(
     setParam("ParamRibbon", "PARAM_RIBBON", jiggleDisplacementX * 0.85, true);
     setParam("ParamSkirt", "PARAM_SKIRT", jiggleDisplacementX * 0.8, true);
     setParam("ParamShoulderY", "PARAM_SHOULDER_Y", Math.abs(angleY) * 0.1 + velocityImpulse * 0.3, true);
+  } else {
+    // Static mode (Off / 0x): Ensure all secondary physics parameters are at resting 0
+    setParam("ParamHairFront", "PARAM_HAIR_FRONT", 0);
+    setParam("ParamHairSide", "PARAM_HAIR_SIDE", 0);
+    setParam("ParamHairBack", "PARAM_HAIR_BACK", 0);
+    setParam("ParamHairFluffy", "PARAM_HAIR_FLUFFY", 0);
+    setParam("ParamBustX", "PARAM_BUST_X", 0);
+    setParam("ParamBustY", "PARAM_BUST_Y", 0);
+    setParam("ParamBust", "PARAM_BUST", 0);
+    setParam("ParamRibbon", "PARAM_RIBBON", 0);
+    setParam("ParamSkirt", "PARAM_SKIRT", 0);
+    setParam("ParamShoulderY", "PARAM_SHOULDER_Y", 0);
   }
 }

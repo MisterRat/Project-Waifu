@@ -716,6 +716,18 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
         }
 
+        // Scale & toggle native Live2D physics engine according to physicsIntensity
+        if (model.internalModel?.physics && typeof model.internalModel.physics.update === "function") {
+          const originalPhysicsUpdate = model.internalModel.physics.update.bind(model.internalModel.physics);
+          model.internalModel.physics.update = (dt: number) => {
+            const intensity = physicsIntensityRef.current ?? 1.0;
+            if (intensity <= 0) {
+              return;
+            }
+            return originalPhysicsUpdate(dt * intensity);
+          };
+        }
+
         if (!isSubscribed) {
           try {
             model.destroy();
@@ -927,14 +939,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             },
             performance.now()
           );
-
-          // 5. Update native Live2D physics engine with responsive inertia
-          if (currentModel.internalModel?.physics && typeof currentModel.internalModel.physics.update === "function") {
-            try {
-              const physicsDt = dt * (1.0 + physicsIntensityRef.current * 0.4);
-              currentModel.internalModel.physics.update(physicsDt);
-            } catch (e) {}
-          }
         };
 
         app.ticker.add(updateModelFrame);
