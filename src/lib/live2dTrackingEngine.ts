@@ -1,6 +1,6 @@
 /**
  * Live2D Tracking & Multi-Joint Kinematics Engine (VTube Studio Style)
- * Handles smooth mouse target interpolation, head-body coupling, and spring-driven physics jiggle.
+ * Handles smooth mouse target interpolation, head-body coupling, and physics jiggle.
  */
 
 export interface TrackingState {
@@ -15,11 +15,6 @@ export interface TrackingState {
   springY: number;
   springVx: number;
   springVy: number;
-  // Dynamic window drag impulse
-  dragImpulseX: number;
-  dragImpulseY: number;
-  // Internal time for physics wave oscillators
-  timeAccum: number;
 }
 
 export function createInitialTrackingState(): TrackingState {
@@ -32,9 +27,6 @@ export function createInitialTrackingState(): TrackingState {
     springY: 0,
     springVx: 0,
     springVy: 0,
-    dragImpulseX: 0,
-    dragImpulseY: 0,
-    timeAccum: 0,
   };
 }
 
@@ -57,26 +49,24 @@ export interface ParameterUpdateOptions {
   motionMouthOpen?: number;
   mouthOpenRatio?: number;
   isSpeaking?: boolean;
-  dragDx?: number;
-  dragDy?: number;
 }
 
 /**
- * Updates tracking state with second-order spring physics and inertia.
+ * Updates the tracking state with a second-order spring-damper for natural acceleration,
+ * smooth following, and overshoot inertia.
  */
 export function stepTrackingState(
   state: TrackingState,
   targetX: number,
   targetY: number,
   dt: number,
-  physicsIntensity: number = 1.0,
-  dragDx: number = 0,
-  dragDy: number = 0
+  physicsIntensity: number = 1.0
 ): TrackingState {
   const clampedDt = Math.min(0.05, Math.max(0.001, dt));
 
-  // 1. Primary Smooth Follow for Head & Body angles
-  const smoothFactor = 1.0 - Math.pow(0.0008, clampedDt);
+  // 1. Primary Smooth Follow (Exponential Lerp for Head & Body angles)
+  // Responsiveness scales naturally with cursor distance
+  const smoothFactor = 1.0 - Math.pow(0.001, clampedDt);
   const prevX = state.currentX;
   const prevY = state.currentY;
 
@@ -87,17 +77,13 @@ export function stepTrackingState(
   const vx = (nextX - prevX) / clampedDt;
   const vy = (nextY - prevY) / clampedDt;
 
-  // 2. Drag Impulse Decay
-  const dragImpulseX = (state.dragImpulseX + dragDx * 0.15) * Math.pow(0.05, clampedDt);
-  const dragImpulseY = (state.dragImpulseY + dragDy * 0.15) * Math.pow(0.05, clampedDt);
+  // 2. Secondary Elastic Spring Physics for Jiggle / Sway (Pendulum simulation)
+  // Higher physicsIntensity increases spring frequency and reduces damping for more jiggle
+  const k = 140.0; // Spring stiffness
+  const c = Math.max(6.0, 18.0 - physicsIntensity * 4.0); // Damping coefficient
 
-  // 3. Elastic Spring Physics for Jiggle / Inertia
-  // physicsIntensity controls spring responsiveness, bounciness, and frequency
-  const k = 120.0 + physicsIntensity * 60.0; // Spring stiffness
-  const c = Math.max(2.5, 16.0 - physicsIntensity * 5.0); // Damping (lower = more bounciness)
-
-  const springForceX = -k * (state.springX - nextX) - c * state.springVx + dragImpulseX * 80.0;
-  const springForceY = -k * (state.springY - nextY) - c * state.springVy + dragImpulseY * 80.0;
+  const springForceX = -k * (state.springX - nextX) - c * state.springVx;
+  const springForceY = -k * (state.springY - nextY) - c * state.springVy;
 
   const nextSpringVx = state.springVx + springForceX * clampedDt;
   const nextSpringVy = state.springVy + springForceY * clampedDt;
@@ -114,81 +100,7 @@ export function stepTrackingState(
     springY: nextSpringY,
     springVx: nextSpringVx,
     springVy: nextSpringVy,
-    dragImpulseX,
-    dragImpulseY,
-    timeAccum: state.timeAccum + clampedDt,
   };
-}
-
-/**
- * Cache for inspected model parameter IDs to prevent searching arrays every frame.
- */
-interface ModelParamCache {
-  allIds: string[];
-  hairIds: string[];
-  bustIds: string[];
-  clothesIds: string[];
-  otherPhysicsIds: string[];
-}
-
-const modelParamCacheMap = new WeakMap<object, ModelParamCache>();
-
-function getOrBuildParamCache(coreModel: any): ModelParamCache {
-  if (modelParamCacheMap.has(coreModel)) {
-    return modelParamCacheMap.get(coreModel)!;
-  }
-
-  const allIds: string[] = [];
-  try {
-    if (typeof coreModel.getParameterCount === "function" && typeof coreModel.getParameterId === "function") {
-      const count = coreModel.getParameterCount();
-      for (let i = 0; i < count; i++) {
-        const id = coreModel.getParameterId(i);
-        if (id) allIds.push(id);
-      }
-    } else if (coreModel._parameters && Array.isArray(coreModel._parameters.ids)) {
-      allIds.push(...coreModel._parameters.ids);
-    }
-  } catch (e) {}
-
-  const hairIds: string[] = [];
-  const bustIds: string[] = [];
-  const clothesIds: string[] = [];
-  const otherPhysicsIds: string[] = [];
-
-  for (const id of allIds) {
-    const upper = id.toUpperCase();
-    if (upper.includes("HAIR")) {
-      hairIds.push(id);
-    } else if (upper.includes("BUST") || upper.includes("BREAST") || upper.includes("CHEST")) {
-      bustIds.push(id);
-    } else if (
-      upper.includes("RIBBON") ||
-      upper.includes("SKIRT") ||
-      upper.includes("CLOTH") ||
-      upper.includes("ACC") ||
-      upper.includes("EAR") ||
-      upper.includes("TAIL") ||
-      upper.includes("WING") ||
-      upper.includes("STRING") ||
-      upper.includes("SLEEVE")
-    ) {
-      clothesIds.push(id);
-    } else if (upper.includes("PHYSIC") || upper.includes("SWAY") || upper.includes("SHAKE") || upper.includes("JIGGLE")) {
-      otherPhysicsIds.push(id);
-    }
-  }
-
-  const cache: ModelParamCache = {
-    allIds,
-    hairIds,
-    bustIds,
-    clothesIds,
-    otherPhysicsIds,
-  };
-
-  modelParamCacheMap.set(coreModel, cache);
-  return cache;
 }
 
 /**
@@ -234,17 +146,17 @@ export function applyLive2DMultiJointKinematics(
 
   // 3. Head Roll / Tilt (ParamAngleZ): -15 to +15 degrees
   // Turning head tilts slightly into the movement + velocity flick
-  const dynamicTilt = -lookX * 12.0 + state.vx * 0.06 * physicsIntensity;
+  const dynamicTilt = -lookX * 12.0 + (state.vx * 0.05 * physicsIntensity);
   const angleZ = dynamicTilt + motionAngleZ;
 
-  // 4. Body Yaw (ParamBodyAngleX): Upper torso turns with head
-  const bodyAngleX = lookX * 10.0 + state.vx * 0.08 * physicsIntensity;
+  // 4. Body Yaw (ParamBodyAngleX): Upper torso turns with head (approx 35% of head angle)
+  const bodyAngleX = lookX * 10.0 + (state.vx * 0.08 * physicsIntensity);
 
   // 5. Body Pitch / Lean (ParamBodyAngleY): Torso leans forward / backward
   const bodyAngleY = -lookY * 8.0;
 
   // 6. Body Roll / Tilt (ParamBodyAngleZ): Spine lateral sway
-  const dynamicBodyTilt = -lookX * 8.0 + state.vx * 0.05 * physicsIntensity;
+  const dynamicBodyTilt = -lookX * 8.0 + (state.vx * 0.04 * physicsIntensity);
   const bodyAngleZ = dynamicBodyTilt + motionBodyAngleZ;
 
   // 7. Eye Gaze (ParamEyeBallX / ParamEyeBallY): -1 to +1
@@ -254,14 +166,11 @@ export function applyLive2DMultiJointKinematics(
   // 8. Natural Breathing Cycle (Sine wave at ~16 breaths/min)
   const breathCycle = (Math.sin((timeMs / 1000) * 2.2) + 1.0) * 0.5;
 
-  // 9. Dynamic Physics Jiggle Displacement (Hair, Bust, Clothes inertia)
-  const jiggleX = (state.springX - state.currentX) * physicsIntensity * 1.8;
-  const jiggleY = (state.springY - state.currentY) * physicsIntensity * 1.8;
-  const velocityImpulse = Math.sqrt(state.vx * state.vx + state.vy * state.vy) * physicsIntensity * 0.25;
-
-  // Subtle idle micro-sway oscillator that scales with physics intensity
-  const idleOscX = Math.sin(state.timeAccum * 3.5) * 0.15 * physicsIntensity;
-  const idleOscY = Math.cos(state.timeAccum * 4.2) * 0.15 * physicsIntensity;
+  // 9. Dynamic Physics Jiggle Offset (Hair, Bust, Clothes inertia)
+  // Calculated from spring displacement and angular acceleration
+  const jiggleDisplacementX = (state.springX - state.currentX) * physicsIntensity * 15.0;
+  const jiggleDisplacementY = (state.springY - state.currentY) * physicsIntensity * 15.0;
+  const velocityImpulse = Math.sqrt(state.vx * state.vx + state.vy * state.vy) * physicsIntensity * 0.2;
 
   // Helper to set parameter value across Cubism 2 (PARAM_*) & Cubism 3/4/5 (Param*)
   const setParam = (idC4: string, idC2: string, value: number, add: boolean = false) => {
@@ -281,7 +190,9 @@ export function applyLive2DMultiJointKinematics(
           coreModel.setParamFloat(idC2 || idC4, value);
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Ignore if specific parameter ID is absent on this model
+    }
   };
 
   // Set Core Multi-Joint Parameters
@@ -309,57 +220,24 @@ export function applyLive2DMultiJointKinematics(
   setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", emotionBrowAngle);
   setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", emotionBrowAngle);
 
-  // 10. Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)
+  // Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)
   if (physicsIntensity > 0) {
-    // Hair physics
-    const hairFrontVal = (jiggleX * 0.9 + idleOscX) * 20.0;
-    const hairSideVal = (jiggleX * 1.1 + idleOscX * 1.2) * 22.0;
-    const hairBackVal = (jiggleX * 0.7 + idleOscX * 0.8) * 16.0;
-    const hairFluffyVal = velocityImpulse * 12.0;
-
-    setParam("ParamHairFront", "PARAM_HAIR_FRONT", hairFrontVal, true);
-    setParam("ParamHairSide", "PARAM_HAIR_SIDE", hairSideVal, true);
-    setParam("ParamHairBack", "PARAM_HAIR_BACK", hairBackVal, true);
-    setParam("ParamHairFluffy", "PARAM_HAIR_FLUFFY", hairFluffyVal, true);
+    // Hair physics swaying
+    setParam("ParamHairFront", "PARAM_HAIR_FRONT", jiggleDisplacementX * 0.8, true);
+    setParam("ParamHairSide", "PARAM_HAIR_SIDE", jiggleDisplacementX * 0.9, true);
+    setParam("ParamHairBack", "PARAM_HAIR_BACK", jiggleDisplacementX * 0.7, true);
+    setParam("ParamHairFluffy", "PARAM_HAIR_FLUFFY", velocityImpulse * 0.5, true);
 
     // Bust / Chest physics jiggle
-    const bustXVal = (jiggleX * 0.85 + idleOscX * 0.5) * 18.0;
-    const bustYVal = (jiggleY * 0.85 + velocityImpulse + idleOscY * 0.5) * 18.0;
-    setParam("ParamBustX", "PARAM_BUST_X", bustXVal, true);
-    setParam("ParamBustY", "PARAM_BUST_Y", bustYVal, true);
-    setParam("ParamBust", "PARAM_BUST", bustYVal, true);
+    const bustJiggleX = jiggleDisplacementX * 0.75;
+    const bustJiggleY = (jiggleDisplacementY + velocityImpulse) * 0.6;
+    setParam("ParamBustX", "PARAM_BUST_X", bustJiggleX, true);
+    setParam("ParamBustY", "PARAM_BUST_Y", bustJiggleY, true);
+    setParam("ParamBust", "PARAM_BUST", bustJiggleY, true);
 
     // Clothing & Accessories physics
-    const ribbonVal = (jiggleX * 0.95 + idleOscX) * 20.0;
-    const skirtVal = (jiggleX * 0.85 + idleOscX * 0.8) * 18.0;
-    const shoulderVal = Math.abs(angleY) * 0.15 + velocityImpulse * 0.4;
-
-    setParam("ParamRibbon", "PARAM_RIBBON", ribbonVal, true);
-    setParam("ParamSkirt", "PARAM_SKIRT", skirtVal, true);
-    setParam("ParamShoulderY", "PARAM_SHOULDER_Y", shoulderVal, true);
-
-    // Dynamic scan and injection for any other custom physics parameters on the loaded model
-    const paramCache = getOrBuildParamCache(coreModel);
-    if (paramCache.hairIds.length > 0) {
-      for (const hid of paramCache.hairIds) {
-        setParam(hid, hid, hairSideVal * 0.5, true);
-      }
-    }
-    if (paramCache.bustIds.length > 0) {
-      for (const bid of paramCache.bustIds) {
-        const isY = bid.toUpperCase().includes("Y");
-        setParam(bid, bid, isY ? bustYVal * 0.6 : bustXVal * 0.6, true);
-      }
-    }
-    if (paramCache.clothesIds.length > 0) {
-      for (const cid of paramCache.clothesIds) {
-        setParam(cid, cid, ribbonVal * 0.5, true);
-      }
-    }
-    if (paramCache.otherPhysicsIds.length > 0) {
-      for (const oid of paramCache.otherPhysicsIds) {
-        setParam(oid, oid, jiggleX * 12.0, true);
-      }
-    }
+    setParam("ParamRibbon", "PARAM_RIBBON", jiggleDisplacementX * 0.85, true);
+    setParam("ParamSkirt", "PARAM_SKIRT", jiggleDisplacementX * 0.8, true);
+    setParam("ParamShoulderY", "PARAM_SHOULDER_Y", Math.abs(angleY) * 0.1 + velocityImpulse * 0.3, true);
   }
 }
