@@ -860,6 +860,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
             isSpeaking={isSpeaking}
             characterName={activeProfile.name}
             modelUrl={activeProfile.live2dModelUrl}
+            physicsIntensity={activeProfile.physicsIntensity ?? 1.0}
             initialScale={activeProfile.live2dScale}
             initialX={activeProfile.live2dX}
             initialY={activeProfile.live2dY}
@@ -869,6 +870,12 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
                 live2dScale: scale,
                 live2dX: x,
                 live2dY: y,
+              });
+            }}
+            onPhysicsIntensityChange={(intensity) => {
+              handleSaveProfile({
+                ...activeProfile,
+                physicsIntensity: intensity,
               });
             }}
             onModelUrlChange={(newUrl) => {

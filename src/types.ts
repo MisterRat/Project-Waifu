@@ -96,6 +96,7 @@ export interface Live2DModelConfig {
   currentEmotion: EmotionType;
   isSpeaking: boolean;
   mouthOpenness: number; // 0 to 1
+  physicsIntensity?: number; // 0.0 to 2.5 (default 1.0)
 }
 
 export interface WaifuProfile {
@@ -115,6 +116,7 @@ export interface WaifuProfile {
   live2dScale?: number;
   live2dX?: number;
   live2dY?: number;
+  physicsIntensity?: number;
 }
 
 export interface WaifuSettings {

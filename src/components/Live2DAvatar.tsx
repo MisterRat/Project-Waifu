@@ -2,6 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { EmotionType, MotionType } from "../types";
 import { loadLive2DFromZip, resolveLive2DModelUrl } from "../lib/live2dZipLoader";
 import {
+  createInitialTrackingState,
+  stepTrackingState,
+  applyLive2DMultiJointKinematics,
+  TrackingState,
+} from "../lib/live2dTrackingEngine";
+import {
   Sparkles,
   Heart,
   Smile,
@@ -30,6 +36,8 @@ interface Live2DAvatarProps {
   isSpeaking: boolean;
   characterName: string;
   modelUrl?: string;
+  physicsIntensity?: number;
+  onPhysicsIntensityChange?: (intensity: number) => void;
   onModelUrlChange?: (newUrl: string) => void;
   onEmotionChange?: (emotion: EmotionType) => void;
   onMotionTrigger?: (motion: MotionType) => void;
@@ -47,6 +55,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   isSpeaking,
   characterName,
   modelUrl,
+  physicsIntensity = 1.0,
+  onPhysicsIntensityChange,
   onModelUrlChange,
   onEmotionChange,
   onMotionTrigger,
@@ -112,6 +122,57 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
   const [isDraggingWindow, setIsDraggingWindow] = useState(false);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [mouthOpenRatio, setMouthOpenRatio] = useState(0);
+  const [activeMotion, setActiveMotion] = useState<MotionType>(motion || "none");
+  const motionStartTimeRef = useRef<number | null>(null);
+
+  const trackingStateRef = useRef<TrackingState>(createInitialTrackingState());
+  const mouseTargetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const physicsIntensityRef = useRef<number>(physicsIntensity ?? 1.0);
+  const emotionRef = useRef<EmotionType>(emotion);
+  const activeMotionRef = useRef<MotionType>(activeMotion);
+  const isSpeakingRef = useRef<boolean>(isSpeaking);
+  const mouthOpenRatioRef = useRef<number>(0);
+
+  useEffect(() => {
+    physicsIntensityRef.current = physicsIntensity ?? 1.0;
+  }, [physicsIntensity]);
+
+  useEffect(() => {
+    emotionRef.current = emotion;
+  }, [emotion]);
+
+  useEffect(() => {
+    activeMotionRef.current = activeMotion;
+  }, [activeMotion]);
+
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
+  useEffect(() => {
+    mouthOpenRatioRef.current = mouthOpenRatio;
+  }, [mouthOpenRatio]);
+
+  // Global mouse tracking across viewport for natural VTuber eye contact and physics response
+  useEffect(() => {
+    const handleGlobalPointerMove = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const relX = (e.clientX - centerX) / (rect.width / 2);
+      const relY = (e.clientY - centerY) / (rect.height / 2);
+      const clampedX = Math.max(-1.5, Math.min(1.5, relX));
+      const clampedY = Math.max(-1.5, Math.min(1.5, relY));
+      mouseTargetRef.current = { x: clampedX, y: clampedY };
+      setMousePos({ x: Math.max(-1, Math.min(1, clampedX)), y: Math.max(-1, Math.min(1, clampedY)) });
+    };
+
+    window.addEventListener("mousemove", handleGlobalPointerMove, { passive: true });
+    return () => window.removeEventListener("mousemove", handleGlobalPointerMove);
+  }, []);
+
   const dragRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
 
   const handleHeaderMouseDown = (e: React.MouseEvent) => {
@@ -194,9 +255,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       window.removeEventListener("touchend", handleTouchEnd);
     };
   }, [isDraggingWindow]);
-  const [mouthOpenRatio, setMouthOpenRatio] = useState(0);
-  const [activeMotion, setActiveMotion] = useState<MotionType>(motion || "none");
-  const motionStartTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (motion && motion !== "none") {
@@ -646,9 +704,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         const { actualModelUrl, urlResolver } = await resolveLive2DModelUrl(customModelUrl);
 
-        // Instantiate model from URL or cached Blob URL
+        // Instantiate model from URL or cached Blob URL with full multi-joint tracking control
         model = await PIXI.live2d.Live2DModel.from(actualModelUrl, {
-          autoInteract: true,
+          autoInteract: false,
         });
 
         if (model && model.internalModel && model.internalModel.settings) {
@@ -667,86 +725,25 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         app.stage.addChild(model);
 
-        // Calculate responsive scale safely and center model
-        const mWidth = (model.width && !isNaN(model.width) && model.width > 0) ? model.width : 400;
-        const mHeight = (model.height && !isNaN(model.height) && model.height > 0) ? model.height : 600;
-        let fitScale = Math.min((width * 0.85) / mWidth, (height * 0.9) / mHeight);
-        if (isNaN(fitScale) || fitScale <= 0 || fitScale === Infinity) {
-          fitScale = 0.25;
-        }
+        // Continuous 60 FPS Multi-Joint Kinematics & Inertia Jiggle Physics Driver
+        const updateModelFrame = () => {
+          if (!live2dModelRef.current) return;
+          const currentModel = live2dModelRef.current;
+          const core = currentModel.internalModel?.coreModel;
+          if (!core) return;
 
-        if (model.anchor && typeof model.anchor.set === "function") {
-          model.anchor.set(0.5, 0.5);
-        }
+          const dt = Math.min(0.05, Math.max(0.001, (app.ticker.deltaMS || 16.6) / 1000));
 
-        const finalScale = (initialScale !== undefined && !isNaN(initialScale) && initialScale > 0) ? initialScale : fitScale;
-        const containerW = displayAreaRef.current?.clientWidth || width;
-        const finalX = containerW / 2;
-        const finalY = (initialY !== undefined && !isNaN(initialY)) ? initialY : (height / 2 + 15);
+          // 1. Step damped spring tracking state
+          trackingStateRef.current = stepTrackingState(
+            trackingStateRef.current,
+            mouseTargetRef.current.x,
+            mouseTargetRef.current.y,
+            dt,
+            physicsIntensityRef.current
+          );
 
-        model.scale.set(finalScale);
-        model.x = finalX;
-        model.y = finalY;
-        setZoomLevel(finalScale);
-
-        // Add ResizeObserver for horizontal centering in container
-        resizeObserver = new ResizeObserver((entries) => {
-          if (model && app && entries[0].contentRect.width > 0) {
-            const containerWidth = entries[0].contentRect.width;
-            const containerHeight = entries[0].contentRect.height;
-            app.renderer.resize(containerWidth, containerHeight);
-            model.x = containerWidth / 2;
-          }
-        });
-        if (displayAreaRef.current) {
-          resizeObserver.observe(displayAreaRef.current);
-        }
-
-        live2dModelRef.current = model;
-        pixiAppRef.current = app;
-
-        if (isSubscribed) {
-          setLive2dStatus("active");
-        }
-      } catch (err: any) {
-        console.warn("Live2D WebGL model load fallback to procedural canvas:", err);
-        addDebugLog("WebGL/Network Fallback: " + String(err?.message || err));
-        if (isSubscribed) {
-          setLive2dStatus("fallback");
-          setLive2dError(null);
-        }
-      }
-    };
-
-    loadPixiModel();
-
-    return () => {
-      isSubscribed = false;
-      if (resizeObserver) resizeObserver.disconnect();
-      if (model) {
-        try {
-          if (app && app.stage) {
-            app.stage.removeChild(model);
-          }
-          model.destroy();
-        } catch (e) {}
-      }
-      live2dModelRef.current = null;
-    };
-  }, [customModelUrl]);
-
-  // Update Live2D Parameters in Realtime (mouth open, expressions, motions, head angle, eye tracking)
-  useEffect(() => {
-    if (live2dStatus === "active" && live2dModelRef.current) {
-      const model = live2dModelRef.current;
-      const core = model.internalModel?.coreModel;
-
-      if (core) {
-        try {
-          const effectiveX = isSpeaking ? 0 : mousePos.x;
-          const effectiveY = isSpeaking ? 0 : mousePos.y;
-
-          // Compute real-time body motion gesture offsets
+          // 2. Active motion curve calculation
           let motionAngleX = 0;
           let motionAngleY = 0;
           let motionAngleZ = 0;
@@ -756,7 +753,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           let motionEyeBallXOverride: number | null = null;
           let motionEyeBallYOverride: number | null = null;
 
-          if (activeMotion !== "none" && motionStartTimeRef.current) {
+          if (activeMotionRef.current !== "none" && motionStartTimeRef.current) {
             const elapsed = (Date.now() - motionStartTimeRef.current) / 1000;
             const duration = 5.0;
 
@@ -770,7 +767,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               const progress = elapsed / duration;
               const pRad = progress * Math.PI;
 
-              switch (activeMotion) {
+              switch (activeMotionRef.current) {
                 case "nod":
                   motionAngleY = Math.sin(progress * Math.PI * 2) * 18;
                   break;
@@ -794,7 +791,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
                   }
                   break;
                 case "check_nails":
-                  // Inspect nails: head tilts down and right, gaze shifts down-right
                   motionAngleX = Math.sin(pRad) * 20;
                   motionAngleY = -Math.sin(pRad) * 16;
                   motionAngleZ = -Math.sin(pRad) * 12;
@@ -802,25 +798,21 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
                   motionEyeBallYOverride = -Math.sin(pRad) * 0.8;
                   break;
                 case "jiggle_dance":
-                  // Playful jiggle sway & shoulder bounce
                   motionAngleZ = Math.sin(progress * Math.PI * 6) * 16;
                   motionBodyAngleZ = Math.sin(progress * Math.PI * 6) * 12;
                   motionAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 8;
                   break;
                 case "sigh_tilt":
-                  // Soft head tilt back/side with subtle breath open
                   motionAngleZ = Math.sin(pRad) * 18;
                   motionAngleY = Math.sin(pRad) * 14;
                   motionMouthOpen = Math.sin(pRad) * 0.25;
                   break;
                 case "curious_glance":
-                  // Curious glance left, right, then tilt head inquiringly
                   motionAngleX = Math.sin(progress * Math.PI * 2) * 22;
                   motionAngleZ = Math.sin(progress * Math.PI) * 12;
                   motionEyeBallXOverride = Math.sin(progress * Math.PI * 2) * 0.85;
                   break;
                 case "stretch_wave":
-                  // Stretch / shoulder lift / gentle sway
                   motionAngleY = Math.sin(pRad) * 18;
                   motionBodyAngleZ = Math.sin(pRad) * 10;
                   break;
@@ -828,7 +820,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             }
           }
 
-          // Evaluate emotion parameters
+          // 3. Evaluate emotion parameters
           let mouthForm = 0;
           let cheekBlush = 0;
           let browLY = 0;
@@ -837,7 +829,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           let eyeLOpen = 1.0;
           let eyeROpen = 1.0;
 
-          switch (emotion) {
+          switch (emotionRef.current) {
             case "happy":
               mouthForm = 1.0;
               cheekBlush = 0.3;
@@ -909,47 +901,116 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             eyeLOpen = motionEyeLOpenOverride;
           }
 
-          const finalAngleX = effectiveX * 25 + motionAngleX;
-          const finalAngleY = -effectiveY * 20 + motionAngleY;
-          const finalAngleZ = motionAngleZ;
-          const finalMouthOpen = Math.max(mouthOpenRatio, motionMouthOpen);
+          // 4. Inject multi-joint angle coupling and physics jiggle
+          applyLive2DMultiJointKinematics(
+            core,
+            trackingStateRef.current,
+            {
+              targetX: mouseTargetRef.current.x,
+              targetY: mouseTargetRef.current.y,
+              deltaTime: dt,
+              physicsIntensity: physicsIntensityRef.current,
+              emotionMouthForm: mouthForm,
+              emotionCheek: cheekBlush,
+              emotionEyeLOpen: eyeLOpen,
+              emotionEyeROpen: eyeROpen,
+              emotionBrowLY: browLY,
+              emotionBrowRY: browRY,
+              emotionBrowAngle: browAngle,
+              motionAngleX,
+              motionAngleY,
+              motionAngleZ,
+              motionBodyAngleZ,
+              motionMouthOpen,
+              mouthOpenRatio: mouthOpenRatioRef.current,
+              isSpeaking: isSpeakingRef.current,
+            },
+            performance.now()
+          );
 
-          const setParam = (id: string, altId: string, val: number) => {
+          // 5. Update native Live2D physics engine with responsive inertia
+          if (currentModel.internalModel?.physics && typeof currentModel.internalModel.physics.update === "function") {
             try {
-              if (typeof core.setParameterValueById === "function") {
-                core.setParameterValueById(id, val);
-                if (altId) core.setParameterValueById(altId, val);
-              } else if (typeof core.setParamFloat === "function") {
-                core.setParamFloat(id, val);
-                if (altId) core.setParamFloat(altId, val);
-              }
+              const physicsDt = dt * (1.0 + physicsIntensityRef.current * 0.4);
+              currentModel.internalModel.physics.update(physicsDt);
             } catch (e) {}
-          };
+          }
+        };
 
-          setParam("ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y", finalMouthOpen);
-          setParam("ParamMouthForm", "PARAM_MOUTH_FORM", mouthForm);
-          setParam("ParamCheek", "PARAM_CHEEK", cheekBlush);
-          setParam("ParamAngleX", "PARAM_ANGLE_X", finalAngleX);
-          setParam("ParamAngleY", "PARAM_ANGLE_Y", finalAngleY);
-          setParam("ParamAngleZ", "PARAM_ANGLE_Z", finalAngleZ);
-          setParam("ParamBodyAngleZ", "PARAM_BODY_ANGLE_Z", motionBodyAngleZ);
-          const finalEyeBallX = motionEyeBallXOverride !== null ? motionEyeBallXOverride : effectiveX;
-          const finalEyeBallY = motionEyeBallYOverride !== null ? motionEyeBallYOverride : -effectiveY;
+        app.ticker.add(updateModelFrame);
 
-          setParam("ParamEyeBallX", "PARAM_EYE_BALL_X", finalEyeBallX);
-          setParam("ParamEyeBallY", "PARAM_EYE_BALL_Y", finalEyeBallY);
-          setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", eyeLOpen);
-          setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", eyeROpen);
-          setParam("ParamBrowLY", "PARAM_BROW_L_Y", browLY);
-          setParam("ParamBrowRY", "PARAM_BROW_R_Y", browRY);
-          setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", browAngle);
-          setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", browAngle);
-        } catch (e) {
-          // Ignore parameter errors if model uses different Cubism ID names
+        // Calculate responsive scale safely and center model
+        const mWidth = (model.width && !isNaN(model.width) && model.width > 0) ? model.width : 400;
+        const mHeight = (model.height && !isNaN(model.height) && model.height > 0) ? model.height : 600;
+        let fitScale = Math.min((width * 0.85) / mWidth, (height * 0.9) / mHeight);
+        if (isNaN(fitScale) || fitScale <= 0 || fitScale === Infinity) {
+          fitScale = 0.25;
+        }
+
+        if (model.anchor && typeof model.anchor.set === "function") {
+          model.anchor.set(0.5, 0.5);
+        }
+
+        const finalScale = (initialScale !== undefined && !isNaN(initialScale) && initialScale > 0) ? initialScale : fitScale;
+        const containerW = displayAreaRef.current?.clientWidth || width;
+        const finalX = containerW / 2;
+        const finalY = (initialY !== undefined && !isNaN(initialY)) ? initialY : (height / 2 + 15);
+
+        model.scale.set(finalScale);
+        model.x = finalX;
+        model.y = finalY;
+        setZoomLevel(finalScale);
+
+        // Add ResizeObserver for horizontal centering in container
+        resizeObserver = new ResizeObserver((entries) => {
+          if (model && app && entries[0].contentRect.width > 0) {
+            const containerWidth = entries[0].contentRect.width;
+            const containerHeight = entries[0].contentRect.height;
+            app.renderer.resize(containerWidth, containerHeight);
+            model.x = containerWidth / 2;
+          }
+        });
+        if (displayAreaRef.current) {
+          resizeObserver.observe(displayAreaRef.current);
+        }
+
+        live2dModelRef.current = model;
+        pixiAppRef.current = app;
+
+        if (isSubscribed) {
+          setLive2dStatus("active");
+        }
+      } catch (err: any) {
+        console.warn("Live2D WebGL model load fallback to procedural canvas:", err);
+        addDebugLog("WebGL/Network Fallback: " + String(err?.message || err));
+        if (isSubscribed) {
+          setLive2dStatus("fallback");
+          setLive2dError(null);
         }
       }
-    }
-  }, [mouthOpenRatio, mousePos, emotion, activeMotion, live2dStatus, isSpeaking]);
+    };
+
+    loadPixiModel();
+
+    return () => {
+      isSubscribed = false;
+      if (resizeObserver) resizeObserver.disconnect();
+      if (app && app.ticker) {
+        try {
+          app.ticker.stop();
+        } catch (e) {}
+      }
+      if (model) {
+        try {
+          if (app && app.stage) {
+            app.stage.removeChild(model);
+          }
+          model.destroy();
+        } catch (e) {}
+      }
+      live2dModelRef.current = null;
+    };
+  }, [customModelUrl]);
 
   // Procedural 2D Anime Avatar Canvas fallback driver
   useEffect(() => {
@@ -979,15 +1040,25 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       const centerX = width / 2;
       const centerY = height / 2 + 30;
 
-      const effectiveX = isSpeaking ? 0 : mousePos.x;
-      const effectiveY = isSpeaking ? 0 : mousePos.y;
+      const dt = 0.016;
+      trackingStateRef.current = stepTrackingState(
+        trackingStateRef.current,
+        mouseTargetRef.current.x,
+        mouseTargetRef.current.y,
+        dt,
+        physicsIntensityRef.current
+      );
 
-      const angleX = effectiveX * 18;
-      const angleY = effectiveY * 12;
+      const effectiveX = isSpeakingRef.current ? 0 : trackingStateRef.current.smoothedX;
+      const effectiveY = isSpeakingRef.current ? 0 : trackingStateRef.current.smoothedY;
+
+      const angleX = effectiveX * 22;
+      const angleY = effectiveY * 16;
+      const angleZ = trackingStateRef.current.headAngleZ + trackingStateRef.current.jiggleSway;
 
       ctx.save();
       ctx.translate(centerX, centerY + breathOffset);
-      ctx.rotate((angleX * Math.PI) / 180 / 3);
+      ctx.rotate((angleZ * Math.PI) / 180);
 
       const auraGrad = ctx.createRadialGradient(0, -60, 20, 0, -60, 180);
       auraGrad.addColorStop(

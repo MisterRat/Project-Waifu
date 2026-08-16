@@ -15,6 +15,7 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
     ttsRate: 1.0,
     themeColor: "pink",
     avatarIcon: "🌸",
+    physicsIntensity: 1.0,
   },
 ];
 

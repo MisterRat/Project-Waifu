@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { WaifuProfile } from "../types";
 import { loadLive2DFromZip } from "../lib/live2dZipLoader";
-import { Settings2, Plus, Trash2, RotateCcw, Check, Sparkles, UserCheck, Bot, Volume2, Globe, FileArchive, Upload, Loader2, MessageSquare } from "lucide-react";
+import { Settings2, Plus, Trash2, RotateCcw, Check, Sparkles, UserCheck, Bot, Volume2, Globe, FileArchive, Upload, Loader2, MessageSquare, Activity, Flame } from "lucide-react";
 
 interface PersonaEditorModalProps {
   isOpen?: boolean;
@@ -154,6 +154,7 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
       themeColor: "pink",
       isCustom: true,
       avatarIcon: "🌟",
+      physicsIntensity: 1.0,
     };
     setFormData(newWaifu);
     setIsCreatingNew(true);
@@ -459,6 +460,76 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
 
               <span className="text-[10px] text-slate-500 block">
                 Supports direct web URLs or local <code className="text-violet-300">.zip</code> archives containing Live2D Cubism 3/4 model files (.model3.json, .moc3, textures, motions). Extracted files are stored locally on server disk.
+              </span>
+            </div>
+
+            {/* Motion & Physics (Jiggle) Intensity Controls */}
+            <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-xs text-slate-200 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-violet-400" />
+                  <span>Physics & Jiggle Motion Intensity</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[11px] font-mono px-2 py-0.5 rounded-lg border ${
+                    (formData.physicsIntensity ?? 1.0) === 0
+                      ? "bg-slate-800 text-slate-400 border-slate-700"
+                      : (formData.physicsIntensity ?? 1.0) > 1.4
+                      ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                      : "bg-violet-500/20 text-violet-300 border-violet-500/30"
+                  }`}>
+                    {(formData.physicsIntensity ?? 1.0) === 0
+                      ? "Static (0.0x)"
+                      : (formData.physicsIntensity ?? 1.0) === 1.0
+                      ? "Standard VTube Studio (1.0x)"
+                      : `${(formData.physicsIntensity ?? 1.0).toFixed(1)}x Intensity`}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-400 font-mono w-8 text-right">0.0x</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2.5"
+                    step="0.1"
+                    value={formData.physicsIntensity ?? 1.0}
+                    onChange={(e) =>
+                      setFormData({ ...formData, physicsIntensity: parseFloat(e.target.value) })
+                    }
+                    className="flex-1 accent-violet-500 h-2 bg-slate-900 rounded-lg cursor-pointer"
+                  />
+                  <span className="text-[11px] text-slate-400 font-mono w-8">2.5x</span>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[
+                    { label: "Off (0x)", val: 0.0 },
+                    { label: "Subtle (0.5x)", val: 0.5 },
+                    { label: "VTube Studio (1.0x)", val: 1.0 },
+                    { label: "Lively (1.5x)", val: 1.5 },
+                    { label: "Bouncy Jiggle (2.0x)", val: 2.0 },
+                  ].map((preset) => (
+                    <button
+                      key={preset.val}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, physicsIntensity: preset.val })}
+                      className={`text-[10px] px-2.5 py-1 rounded-lg border transition ${
+                        (formData.physicsIntensity ?? 1.0) === preset.val
+                          ? "bg-violet-600/30 border-violet-400 text-violet-200 font-bold shadow-sm"
+                          : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <span className="text-[10px] text-slate-500 block leading-relaxed">
+                Controls kinematic multi-joint head & body angle distribution (yaw, pitch, roll tilt, torso sway) and spring-driven momentum jiggle for hair, ribbons, clothing, and body physics.
               </span>
             </div>
 
