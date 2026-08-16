@@ -716,16 +716,78 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
         }
 
-        // Scale & toggle native Live2D physics engine according to physicsIntensity
-        if (model.internalModel?.physics && typeof model.internalModel.physics.update === "function") {
-          const originalPhysicsUpdate = model.internalModel.physics.update.bind(model.internalModel.physics);
-          model.internalModel.physics.update = (dt: number) => {
-            const intensity = physicsIntensityRef.current ?? 1.0;
-            if (intensity <= 0) {
-              return;
-            }
-            return originalPhysicsUpdate(dt * intensity);
-          };
+        // Robust physics interceptor supporting both Cubism 4 (evaluate) and Cubism 2 (update)
+        const hookCubismPhysics = (physics: any) => {
+          if (!physics || physics._isHooked) return;
+          physics._isHooked = true;
+
+          // Cubism 4 Core SDK evaluator: evaluate(coreModel, dt)
+          if (typeof physics.evaluate === "function") {
+            const originalEvaluate = physics.evaluate.bind(physics);
+            physics.evaluate = function (coreModelArg: any, dt: number) {
+              const intensity = physicsIntensityRef.current ?? 1.0;
+              if (intensity <= 0) {
+                // Off: Completely disable physics simulation
+                return;
+              }
+              if (Math.abs(intensity - 1.0) < 0.001) {
+                return originalEvaluate(coreModelArg, dt);
+              }
+
+              // Snapshot raw parameter array to scale displacement deltas
+              const targetCore = coreModelArg || physics.coreModel || live2dModelRef.current?.internalModel?.coreModel;
+              let snapshot: Float32Array | null = null;
+              try {
+                const rawParams = targetCore?.getModel?.()?.parameters?.values;
+                if (rawParams && rawParams.length) {
+                  snapshot = new Float32Array(rawParams);
+                }
+              } catch (e) {}
+
+              const res = originalEvaluate(coreModelArg, dt);
+
+              try {
+                const rawParams = targetCore?.getModel?.()?.parameters?.values;
+                if (rawParams && snapshot && rawParams.length === snapshot.length) {
+                  for (let i = 0; i < rawParams.length; i++) {
+                    const before = snapshot[i];
+                    const after = rawParams[i];
+                    if (before !== after) {
+                      rawParams[i] = before + (after - before) * intensity;
+                    }
+                  }
+                }
+              } catch (e) {}
+
+              return res;
+            };
+          }
+
+          // Cubism 2 Core SDK updater: update(coreModel, dt) or update(dt)
+          if (typeof physics.update === "function") {
+            const originalUpdate = physics.update.bind(physics);
+            physics.update = function (...args: any[]) {
+              const intensity = physicsIntensityRef.current ?? 1.0;
+              if (intensity <= 0) {
+                return;
+              }
+              return originalUpdate(...args);
+            };
+          }
+        };
+
+        if (model.internalModel?.physics) {
+          hookCubismPhysics(model.internalModel.physics);
+        }
+        if (typeof (model as any).on === "function") {
+          (model as any).on("physicsLoaded", (p: any) => {
+            hookCubismPhysics(p || model.internalModel?.physics);
+          });
+        }
+        if (model.internalModel && typeof (model.internalModel as any).on === "function") {
+          (model.internalModel as any).on("physicsLoaded", (p: any) => {
+            hookCubismPhysics(p || model.internalModel?.physics);
+          });
         }
 
         if (!isSubscribed) {
@@ -743,6 +805,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           const currentModel = live2dModelRef.current;
           const core = currentModel.internalModel?.coreModel;
           if (!core) return;
+
+          if (currentModel.internalModel?.physics && !currentModel.internalModel.physics._isHooked) {
+            hookCubismPhysics(currentModel.internalModel.physics);
+          }
 
           const dt = Math.min(0.05, Math.max(0.001, (app.ticker.deltaMS || 16.6) / 1000));
 
