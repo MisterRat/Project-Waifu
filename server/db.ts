@@ -448,6 +448,7 @@ export async function saveUserSettings(userId: string, data: {
   ttsConfig?: any;
   sttConfig?: any;
   openwebuiConfig?: any;
+  trackingEngineEnabled?: boolean;
 }) {
   const { db, save } = await getDb();
   const existing = await getUserSettings(userId);
@@ -470,6 +471,13 @@ export async function saveUserSettings(userId: string, data: {
       openwebui_config = excluded.openwebui_config,
       updated_at = excluded.updated_at
   `, [userId, activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig, now]);
+
+  if (data.trackingEngineEnabled !== undefined) {
+    db.run(
+      "INSERT INTO system_config (key, value, updated_at) VALUES ('tracking_engine_enabled', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+      [JSON.stringify(data.trackingEngineEnabled), now]
+    );
+  }
 
   save();
 }
@@ -604,12 +612,14 @@ export async function getSystemSettings() {
     ttsConfig: any;
     sttConfig: any;
     openwebuiConfig: any;
+    trackingEngineEnabled?: boolean;
   } = {
     activeProfileId: null,
     waifuProfiles: null,
     ttsConfig: null,
     sttConfig: null,
     openwebuiConfig: null,
+    trackingEngineEnabled: true,
   };
 
   while (stmt.step()) {
@@ -622,6 +632,7 @@ export async function getSystemSettings() {
       if (key === "tts_config") settings.ttsConfig = JSON.parse(val);
       if (key === "stt_config") settings.sttConfig = JSON.parse(val);
       if (key === "openwebui_config") settings.openwebuiConfig = JSON.parse(val);
+      if (key === "tracking_engine_enabled") settings.trackingEngineEnabled = JSON.parse(val);
     } catch (e) {
       console.warn(`Failed parsing system_config key ${key}:`, e);
     }
@@ -636,6 +647,7 @@ export async function saveSystemSettings(data: {
   ttsConfig?: any;
   sttConfig?: any;
   openwebuiConfig?: any;
+  trackingEngineEnabled?: boolean;
 }) {
   const { db, save } = await getDb();
   const now = Date.now();
@@ -654,6 +666,7 @@ export async function saveSystemSettings(data: {
   if (data.ttsConfig !== undefined) setConfig("tts_config", JSON.stringify(data.ttsConfig));
   if (data.sttConfig !== undefined) setConfig("stt_config", JSON.stringify(data.sttConfig));
   if (data.openwebuiConfig !== undefined) setConfig("openwebui_config", JSON.stringify(data.openwebuiConfig));
+  if (data.trackingEngineEnabled !== undefined) setConfig("tracking_engine_enabled", JSON.stringify(data.trackingEngineEnabled));
 
   save();
 }
