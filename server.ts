@@ -511,13 +511,14 @@ async function startServer() {
   // POST /api/system/settings - Update system-wide configuration
   app.post("/api/system/settings", async (req, res) => {
     try {
-      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig } = req.body;
+      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig, trackingEngineEnabled } = req.body;
       await saveSystemSettings({
         activeProfileId,
         waifuProfiles,
         ttsConfig,
         sttConfig,
         openwebuiConfig,
+        trackingEngineEnabled,
       });
       const user = await getCurrentUser(req);
       if (user) {
@@ -527,6 +528,7 @@ async function startServer() {
           ttsConfig,
           sttConfig,
           openwebuiConfig,
+          trackingEngineEnabled,
         });
       }
       return res.json({ status: "ok", message: "System settings successfully persisted to SQLite database." });
@@ -558,13 +560,14 @@ async function startServer() {
       if (!user) {
         return res.status(401).json({ error: "Unauthorized. Please log in." });
       }
-      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig } = req.body;
+      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig, trackingEngineEnabled } = req.body;
       await saveUserSettings(user.id, {
         activeProfileId,
         waifuProfiles,
         ttsConfig,
         sttConfig,
         openwebuiConfig,
+        trackingEngineEnabled,
       });
       // Also persist to system_config so reboot retains all personas and configs
       await saveSystemSettings({
@@ -573,6 +576,7 @@ async function startServer() {
         ttsConfig,
         sttConfig,
         openwebuiConfig,
+        trackingEngineEnabled,
       });
       return res.json({ status: "ok", message: "User settings and system database updated." });
     } catch (err: any) {
@@ -1294,9 +1298,9 @@ async function startServer() {
       const defaultSystem = `You are ${characterName}, an affectionate, enthusiastic anime companion (Waifu) live on camera. 
 Keep your responses short, expressive, engaging, and suitable for a voice assistant (1-3 sentences max).
 Express your emotions and body motions using square bracket tags in your response stream!
-Available emotion tags: [happy], [blush], [sad], [surprised], [thinking], [excited], [angry], [wink], [neutral].
+Available emotion tags: [happy], [excited], [flirty], [smirk], [surprised], [thinking], [confused], [embarrassed], [tipsy], [tired], [sad], [crying], [scared], [angry], [evil].
 Available motion tags: [nod], [wave], [shake], [bow], [laugh], [wink].
-Example: "[blush][nod] Oh! I'm so happy you spoke to me! What shall we work on today?"`;
+Example: "[happy][nod] Oh! I'm so glad you spoke to me! What shall we work on today?"`;
 
       const promptText = Array.isArray(messages)
         ? messages.map((m: any) => `${m.role}: ${m.content}`).join("\n")
@@ -1341,11 +1345,17 @@ Example: "[blush][nod] Oh! I'm so happy you spoke to me! What shall we work on t
 
       // Extract emotion tag if present
       let detectedEmotion = emotion || "happy";
-      const emotionMatch = replyText.match(/^\[(happy|blush|sad|surprised|thinking|excited)\]/i);
+      const emotionMatch = replyText.match(
+        /^\[(angry|confused|crying|embarrassed|evil|excited|flirty|happy|sad|scared|smirk|surprised|thinking|tipsy|tired|blush|neutral)\]/i
+      );
       let cleanText = replyText;
       if (emotionMatch) {
-        detectedEmotion = emotionMatch[1].toLowerCase();
-        cleanText = replyText.replace(/^\[(happy|blush|sad|surprised|thinking|excited)\]\s*/i, "");
+        const rawTag = emotionMatch[1].toLowerCase();
+        detectedEmotion = rawTag === "blush" ? "embarrassed" : rawTag === "neutral" ? "happy" : rawTag;
+        cleanText = replyText.replace(
+          /^\[(angry|confused|crying|embarrassed|evil|excited|flirty|happy|sad|scared|smirk|surprised|thinking|tipsy|tired|blush|neutral)\]\s*/i,
+          ""
+        );
       }
 
       return res.json({
