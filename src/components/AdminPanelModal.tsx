@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { User, SmtpConfig } from "../types";
-import { Users, Mail, CheckCircle2, XCircle, Trash2, Shield, ShieldAlert, Send, RefreshCw, X, Loader2, KeyRound, Activity } from "lucide-react";
+import { User, SmtpConfig, EmotionType, MotionType, EMOTION_TYPES } from "../types";
+import { Users, Mail, CheckCircle2, XCircle, Trash2, Shield, ShieldAlert, Send, RefreshCw, X, Loader2, KeyRound, Activity, Smile, Play } from "lucide-react";
 
 interface AdminPanelModalProps {
   isOpen: boolean;
@@ -8,6 +8,8 @@ interface AdminPanelModalProps {
   currentUser: User | null;
   trackingEngineEnabled?: boolean;
   onToggleTrackingEngine?: (enabled: boolean) => void;
+  onTestEmotion?: (emotion: EmotionType) => void;
+  onTestMotion?: (motion: MotionType) => void;
 }
 
 export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
@@ -16,8 +18,12 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   currentUser,
   trackingEngineEnabled = true,
   onToggleTrackingEngine,
+  onTestEmotion,
+  onTestMotion,
 }) => {
-  const [activeTab, setActiveTab] = useState<"users" | "smtp" | "pin" | "tracking">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "smtp" | "pin" | "tracking" | "emotions">("users");
+  const [activeTestEmotion, setActiveTestEmotion] = useState<EmotionType | null>(null);
+  const [activeTestMotion, setActiveTestMotion] = useState<MotionType | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -423,6 +429,18 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
             <Activity className="w-4 h-4" />
             <span>Tracking Engine</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab("emotions")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition cursor-pointer ${
+              activeTab === "emotions"
+                ? "border-pink-500 text-pink-400 bg-slate-900/80"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Smile className="w-4 h-4" />
+            <span>Emotion Testing</span>
+          </button>
         </div>
 
         {/* Status Message Display */}
@@ -714,7 +732,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 </button>
               </div>
             </form>
-          ) : (
+          ) : activeTab === "tracking" ? (
             <div className="space-y-6">
               <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400">
                 ⚙️ <strong>Tracking Engine Module:</strong> Controls the Live2D Tracking &amp; Multi-Joint Kinematics Engine (<code className="text-pink-400 font-mono">src/lib/live2dTracking.ts</code>). Disabling tracking switches the avatars to a static resting pose while maintaining audio lip-sync and expressions.
@@ -764,6 +782,110 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-2 border-t border-slate-800/80">
                 <span>Persistence: SQLite system_config (tracking_engine_enabled)</span>
                 <span>Current State: {trackingEnabled ? "Enabled" : "Disabled"}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 flex items-center justify-between">
+                <div>
+                  🎭 <strong>Live2D Emotion &amp; Motion Calibration:</strong> Click any emotion below to test facial expressions, eye shapes, and blush parameter mapping in real-time.
+                </div>
+                {activeTestEmotion && (
+                  <button
+                    onClick={() => {
+                      setActiveTestEmotion(null);
+                      if (onTestEmotion) onTestEmotion("happy");
+                    }}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-mono transition cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Smile className="w-3.5 h-3.5 text-pink-400" />
+                  Facial Emotion Triggers ({EMOTION_TYPES.length})
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                  {EMOTION_TYPES.map((emo) => {
+                    const isCurrent = activeTestEmotion === emo.id;
+                    return (
+                      <button
+                        key={emo.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveTestEmotion(emo.id);
+                          if (onTestEmotion) {
+                            onTestEmotion(emo.id);
+                          }
+                        }}
+                        className={`flex items-center gap-2.5 p-3 rounded-xl text-left border transition cursor-pointer ${
+                          isCurrent
+                            ? "bg-pink-950/60 border-pink-500/80 text-pink-200 shadow-md shadow-pink-500/10"
+                            : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700 text-slate-300 hover:bg-slate-900"
+                        }`}
+                      >
+                        <span className="text-lg select-none">{emo.emoji}</span>
+                        <div>
+                          <div className="text-xs font-semibold leading-none capitalize">{emo.label}</div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-1">[{emo.id}]</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800/80">
+                <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Play className="w-3.5 h-3.5 text-pink-400" />
+                  Live2D Motion Quick Tests
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                  {[
+                    { id: "nod", label: "Nod Yes", emoji: "👇" },
+                    { id: "shake", label: "Shake Head", emoji: "↔️" },
+                    { id: "wave", label: "Wave Hand", emoji: "👋" },
+                    { id: "bow", label: "Polite Bow", emoji: "🙇" },
+                    { id: "laugh", label: "Hearty Laugh", emoji: "😄" },
+                    { id: "wink", label: "Playful Wink", emoji: "😉" },
+                    { id: "curious_glance", label: "Curious Glance", emoji: "👀" },
+                    { id: "jiggle_dance", label: "Jiggle Dance", emoji: "💃" },
+                  ].map((motion) => {
+                    const isCurrent = activeTestMotion === motion.id;
+                    return (
+                      <button
+                        key={motion.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveTestMotion(motion.id as MotionType);
+                          if (onTestMotion) {
+                            onTestMotion(motion.id as MotionType);
+                          }
+                          setTimeout(() => setActiveTestMotion(null), 2500);
+                        }}
+                        className={`flex items-center gap-2 p-2.5 rounded-xl text-left border transition cursor-pointer ${
+                          isCurrent
+                            ? "bg-purple-950/60 border-purple-500/80 text-purple-200"
+                            : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700 text-slate-300 hover:bg-slate-900"
+                        }`}
+                      >
+                        <span className="text-sm select-none">{motion.emoji}</span>
+                        <div>
+                          <div className="text-xs font-medium leading-none">{motion.label}</div>
+                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">{motion.id}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-2 border-t border-slate-800/80">
+                <span>Active Expression: {activeTestEmotion || "Default (happy/neutral)"}</span>
+                <span>Active Motion: {activeTestMotion || "None"}</span>
               </div>
             </div>
           )}
