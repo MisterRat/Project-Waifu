@@ -1,12 +1,38 @@
 import React, { useState, useEffect } from "react";
 import { User, SmtpConfig, EmotionType, MotionType, EMOTION_TYPES } from "../types";
-import { Users, Mail, CheckCircle2, XCircle, Trash2, Shield, ShieldAlert, Send, RefreshCw, X, Loader2, KeyRound, Activity, Smile, Play } from "lucide-react";
+import {
+  Users,
+  Mail,
+  CheckCircle2,
+  XCircle,
+  Trash2,
+  Shield,
+  ShieldAlert,
+  Send,
+  RefreshCw,
+  X,
+  Loader2,
+  KeyRound,
+  Activity,
+  Smile,
+  Play,
+  Sliders,
+  PanelRight,
+  Maximize2,
+  Sparkles,
+  Heart,
+  Flame,
+  Volume2,
+} from "lucide-react";
 
 interface AdminPanelModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: User | null;
   trackingEngineEnabled?: boolean;
+  currentEmotion?: EmotionType;
+  currentMotion?: MotionType;
+  activeCharacterName?: string;
   onToggleTrackingEngine?: (enabled: boolean) => void;
   onTestEmotion?: (emotion: EmotionType) => void;
   onTestMotion?: (motion: MotionType) => void;
@@ -17,16 +43,32 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   onClose,
   currentUser,
   trackingEngineEnabled = true,
+  currentEmotion = "happy",
+  currentMotion = "none",
+  activeCharacterName = "Waifu",
   onToggleTrackingEngine,
   onTestEmotion,
   onTestMotion,
 }) => {
   const [activeTab, setActiveTab] = useState<"users" | "smtp" | "pin" | "tracking" | "emotions">("users");
-  const [activeTestEmotion, setActiveTestEmotion] = useState<EmotionType | null>(null);
-  const [activeTestMotion, setActiveTestMotion] = useState<MotionType | null>(null);
+  const [activeTestEmotion, setActiveTestEmotion] = useState<EmotionType>(currentEmotion);
+  const [activeTestMotion, setActiveTestMotion] = useState<MotionType>(currentMotion);
+  const [emotionViewMode, setEmotionViewMode] = useState<"docked" | "modal">("docked");
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentEmotion) {
+      setActiveTestEmotion(currentEmotion);
+    }
+  }, [currentEmotion]);
+
+  useEffect(() => {
+    if (currentMotion) {
+      setActiveTestMotion(currentMotion);
+    }
+  }, [currentMotion]);
 
   const [smtp, setSmtp] = useState<SmtpConfig>({
     host: "",
@@ -353,42 +395,82 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   const pendingCount = users.filter((u) => u.status === "pending").length;
 
+  const isEmotionTab = activeTab === "emotions";
+  const isDocked = isEmotionTab && emotionViewMode === "docked";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden text-slate-100 max-h-[90vh] flex flex-col">
+    <div
+      className={`fixed inset-0 z-50 animate-fade-in ${
+        isDocked
+          ? "pointer-events-none bg-slate-950/20 backdrop-blur-[1px] flex items-stretch justify-end p-4"
+          : "flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
+      }`}
+    >
+      <div
+        className={`relative w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col pointer-events-auto transition-all duration-300 ${
+          isDocked ? "max-w-md h-full max-h-none border-pink-500/30" : "max-w-3xl max-h-[90vh]"
+        }`}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-800/80 bg-slate-900/50">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800/80 bg-slate-900/50">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
               <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-100 text-base">System Administration & Management</h3>
-              <p className="text-xs text-slate-400 font-mono">User Approvals, Roles & SMTP Configuration</p>
+              <h3 className="font-bold text-slate-100 text-sm sm:text-base">
+                {isEmotionTab ? "Live2D Emotion & Motion Inspector" : "System Administration"}
+              </h3>
+              <p className="text-xs text-slate-400 font-mono">
+                {isEmotionTab
+                  ? `Active Model: ${activeCharacterName} (Live Preview)`
+                  : "User Approvals, Roles & SMTP Configuration"}
+              </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 rounded-xl transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {isEmotionTab && (
+              <button
+                onClick={() => setEmotionViewMode(isDocked ? "modal" : "docked")}
+                title={isDocked ? "Switch to Centered Modal" : "Dock Right to see Live Model"}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-mono border border-slate-700 transition cursor-pointer"
+              >
+                {isDocked ? (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 text-pink-400" />
+                    <span className="hidden sm:inline">Center</span>
+                  </>
+                ) : (
+                  <>
+                    <PanelRight className="w-3.5 h-3.5 text-pink-400" />
+                    <span className="hidden sm:inline">Dock Right</span>
+                  </>
+                )}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 rounded-xl transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Selection Bar */}
-        <div className="flex items-center gap-2 px-6 pt-4 border-b border-slate-800 bg-slate-950/40">
+        <div className="flex items-center gap-1.5 px-4 sm:px-6 pt-3 border-b border-slate-800 bg-slate-950/40 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab("users")}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === "users"
                 ? "border-pink-500 text-pink-400 bg-slate-900/80"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Users className="w-4 h-4" />
-            <span>User Accounts & Approvals</span>
+            <Users className="w-3.5 h-3.5" />
+            <span>Users</span>
             {pendingCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-slate-950">
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-slate-950">
                 {pendingCount}
               </span>
             )}
@@ -396,49 +478,49 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
           <button
             onClick={() => setActiveTab("smtp")}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === "smtp"
                 ? "border-pink-500 text-pink-400 bg-slate-900/80"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Mail className="w-4 h-4" />
-            <span>Email & SMTP Config</span>
+            <Mail className="w-3.5 h-3.5" />
+            <span>SMTP</span>
           </button>
 
           <button
             onClick={() => setActiveTab("pin")}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === "pin"
                 ? "border-pink-500 text-pink-400 bg-slate-900/80"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <KeyRound className="w-4 h-4" />
-            <span>Security & PIN</span>
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>PIN</span>
           </button>
 
           <button
             onClick={() => setActiveTab("tracking")}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === "tracking"
                 ? "border-pink-500 text-pink-400 bg-slate-900/80"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Activity className="w-4 h-4" />
-            <span>Tracking Engine</span>
+            <Activity className="w-3.5 h-3.5" />
+            <span>Tracking</span>
           </button>
 
           <button
             onClick={() => setActiveTab("emotions")}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === "emotions"
                 ? "border-pink-500 text-pink-400 bg-slate-900/80"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Smile className="w-4 h-4" />
+            <Smile className="w-3.5 h-3.5" />
             <span>Emotion Testing</span>
           </button>
         </div>
@@ -785,30 +867,128 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               </div>
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 flex items-center justify-between">
-                <div>
-                  🎭 <strong>Live2D Emotion &amp; Motion Calibration:</strong> Click any emotion below to test facial expressions, eye shapes, and blush parameter mapping in real-time.
-                </div>
-                {activeTestEmotion && (
+            <div className="space-y-5">
+              {/* Telemetry & Active Status Display Card */}
+              <div className="p-4 bg-slate-950 border border-slate-800/90 rounded-2xl space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-pink-500/20 to-purple-500/20 border border-pink-500/40 text-2xl select-none">
+                      {EMOTION_TYPES.find((e) => e.id === activeTestEmotion)?.emoji || "😊"}
+                      <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-950 animate-ping" />
+                      <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-950" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-slate-100 capitalize">
+                          {EMOTION_TYPES.find((e) => e.id === activeTestEmotion)?.label || "Happy"}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-pink-500/15 border border-pink-500/30 text-pink-300 font-semibold">
+                          [emotion:{activeTestEmotion || "happy"}]
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 font-mono mt-0.5">
+                        Target Model: <span className="text-slate-200 font-medium">{activeCharacterName}</span>
+                      </p>
+                    </div>
+                  </div>
+
                   <button
                     onClick={() => {
-                      setActiveTestEmotion(null);
+                      setActiveTestEmotion("happy");
+                      setActiveTestMotion("none");
                       if (onTestEmotion) onTestEmotion("happy");
+                      if (onTestMotion) onTestMotion("none");
                     }}
-                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-mono transition cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-mono border border-slate-800 transition cursor-pointer"
                   >
-                    Reset
+                    <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Reset to Default</span>
                   </button>
-                )}
+                </div>
+
+                {/* Facial Parameter Simulation Meters */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-900 text-xs font-mono">
+                  <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-800/60">
+                    <span className="text-[10px] text-slate-500 block uppercase">Cheek Blush</span>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-slate-200 font-semibold">
+                        {["embarrassed", "flirty", "tipsy", "excited"].includes(activeTestEmotion)
+                          ? "85%"
+                          : ["happy", "smirk"].includes(activeTestEmotion)
+                          ? "35%"
+                          : "0%"}
+                      </span>
+                      <div className="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-pink-500 rounded-full transition-all duration-300"
+                          style={{
+                            width: ["embarrassed", "flirty", "tipsy", "excited"].includes(activeTestEmotion)
+                              ? "85%"
+                              : ["happy", "smirk"].includes(activeTestEmotion)
+                              ? "35%"
+                              : "0%",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-800/60">
+                    <span className="text-[10px] text-slate-500 block uppercase">Eye Expression</span>
+                    <span className="text-slate-200 font-semibold block mt-1 truncate">
+                      {["surprised", "scared"].includes(activeTestEmotion)
+                        ? "Wide Open"
+                        : ["wink"].includes(activeTestEmotion)
+                        ? "Left Wink"
+                        : ["tired", "sleepy"].includes(activeTestEmotion)
+                        ? "Half Lidded"
+                        : ["happy", "excited"].includes(activeTestEmotion)
+                        ? "Squint Smile"
+                        : "Normal"}
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-800/60">
+                    <span className="text-[10px] text-slate-500 block uppercase">Mouth Form</span>
+                    <span className="text-slate-200 font-semibold block mt-1 truncate">
+                      {["happy", "excited", "flirty"].includes(activeTestEmotion)
+                        ? "Curved Smile"
+                        : ["sad", "crying", "angry"].includes(activeTestEmotion)
+                        ? "Down Frown"
+                        : ["surprised", "scared"].includes(activeTestEmotion)
+                        ? "Open O-Shape"
+                        : ["smirk", "evil"].includes(activeTestEmotion)
+                        ? "Asymmetric"
+                        : "Neutral"}
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-800/60">
+                    <span className="text-[10px] text-slate-500 block uppercase">Gesture Motion</span>
+                    <span className="text-purple-300 font-semibold block mt-1 truncate">
+                      {activeTestMotion && activeTestMotion !== "none" ? `[${activeTestMotion}]` : "Idle Rest"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-400 bg-slate-900/40 p-2 rounded-xl border border-slate-800/40 flex items-center gap-2">
+                  <span className="text-pink-400">👀</span>
+                  <span>
+                    <strong>Live Canvas View:</strong> Watch the character react on the screen in real-time as you click buttons below.
+                  </span>
+                </div>
               </div>
 
+              {/* Emotion Buttons Section */}
               <div>
-                <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  <Smile className="w-3.5 h-3.5 text-pink-400" />
-                  Facial Emotion Triggers ({EMOTION_TYPES.length})
+                <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Smile className="w-3.5 h-3.5 text-pink-400" />
+                    Facial Emotion Triggers ({EMOTION_TYPES.length})
+                  </span>
+                  <span className="text-[10px] text-slate-500 lowercase font-normal">click to trigger Live2D expression</span>
                 </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {EMOTION_TYPES.map((emo) => {
                     const isCurrent = activeTestEmotion === emo.id;
                     return (
@@ -821,15 +1001,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             onTestEmotion(emo.id);
                           }
                         }}
-                        className={`flex items-center gap-2.5 p-3 rounded-xl text-left border transition cursor-pointer ${
+                        className={`flex items-center gap-2.5 p-2.5 rounded-xl text-left border transition cursor-pointer ${
                           isCurrent
-                            ? "bg-pink-950/60 border-pink-500/80 text-pink-200 shadow-md shadow-pink-500/10"
+                            ? "bg-pink-950/70 border-pink-500 text-pink-200 shadow-md shadow-pink-500/15 ring-1 ring-pink-500/50"
                             : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700 text-slate-300 hover:bg-slate-900"
                         }`}
                       >
                         <span className="text-lg select-none">{emo.emoji}</span>
-                        <div>
-                          <div className="text-xs font-semibold leading-none capitalize">{emo.label}</div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold leading-none capitalize truncate">{emo.label}</div>
                           <div className="text-[10px] text-slate-500 font-mono mt-1">[{emo.id}]</div>
                         </div>
                       </button>
@@ -838,12 +1018,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800/80">
-                <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  <Play className="w-3.5 h-3.5 text-pink-400" />
-                  Live2D Motion Quick Tests
+              {/* Motion Gestures Section */}
+              <div className="pt-3 border-t border-slate-800/80">
+                <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Play className="w-3.5 h-3.5 text-purple-400" />
+                    Live2D Kinematic Gestures
+                  </span>
+                  <span className="text-[10px] text-slate-500 lowercase font-normal">triggers head &amp; body motions</span>
                 </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                   {[
                     { id: "nod", label: "Nod Yes", emoji: "👇" },
                     { id: "shake", label: "Shake Head", emoji: "↔️" },
@@ -864,28 +1048,23 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                           if (onTestMotion) {
                             onTestMotion(motion.id as MotionType);
                           }
-                          setTimeout(() => setActiveTestMotion(null), 2500);
+                          setTimeout(() => setActiveTestMotion("none"), 3000);
                         }}
-                        className={`flex items-center gap-2 p-2.5 rounded-xl text-left border transition cursor-pointer ${
+                        className={`flex items-center gap-2 p-2 rounded-xl text-left border transition cursor-pointer ${
                           isCurrent
-                            ? "bg-purple-950/60 border-purple-500/80 text-purple-200"
+                            ? "bg-purple-950/70 border-purple-500 text-purple-200 ring-1 ring-purple-500/50"
                             : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700 text-slate-300 hover:bg-slate-900"
                         }`}
                       >
                         <span className="text-sm select-none">{motion.emoji}</span>
-                        <div>
-                          <div className="text-xs font-medium leading-none">{motion.label}</div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium leading-none truncate">{motion.label}</div>
                           <div className="text-[9px] text-slate-500 font-mono mt-0.5">{motion.id}</div>
                         </div>
                       </button>
                     );
                   })}
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-2 border-t border-slate-800/80">
-                <span>Active Expression: {activeTestEmotion || "Default (happy/neutral)"}</span>
-                <span>Active Motion: {activeTestMotion || "None"}</span>
               </div>
             </div>
           )}
