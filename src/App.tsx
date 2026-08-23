@@ -910,6 +910,14 @@ export default function App() {
           setTrackingEngineEnabled(enabled);
           localStorage.setItem("waifu_tracking_engine_enabled", JSON.stringify(enabled));
         }}
+        onTestEmotion={(emotion) => {
+          setCurrentEmotion(emotion);
+          handleDebugLog(`[Admin Testing] Triggered emotion: ${emotion}`);
+        }}
+        onTestMotion={(motion) => {
+          setCurrentMotion(motion);
+          handleDebugLog(`[Admin Testing] Triggered motion: ${motion}`);
+        }}
       />
 
       {/* Bottom Status Bar / Footer */}
