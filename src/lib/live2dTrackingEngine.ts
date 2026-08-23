@@ -176,9 +176,10 @@ export function applyLive2DMultiJointKinematics(
   const jiggleDisplacementY = !trackingEngineEnabled ? 0 : (state.springY - state.currentY) * physicsIntensity * 15.0;
   const velocityImpulse = !trackingEngineEnabled ? 0 : Math.sqrt(effectiveVx * effectiveVx + effectiveVy * effectiveVy) * physicsIntensity * 0.2;
 
-  // Helper to set parameter value across Cubism 2 (PARAM_*) & Cubism 3/4/5 (Param*)
+  // Robust parameter setter that inspects all Cubism 4, 3, and 2 parameter resolution interfaces
   const setParam = (idC4: string, idC2: string, value: number, add: boolean = false) => {
     try {
+      // 1. Cubism 4 / 3 (Live2DModel / InternalModel / CoreModel)
       if (typeof coreModel.setParameterValueById === "function") {
         if (add && typeof coreModel.getParameterValueById === "function") {
           const cur = coreModel.getParameterValueById(idC4) || 0;
@@ -186,12 +187,30 @@ export function applyLive2DMultiJointKinematics(
         } else {
           coreModel.setParameterValueById(idC4, value);
         }
-      } else if (typeof coreModel.setParamFloat === "function") {
+      }
+      // 2. Cubism 2 setParamFloat
+      if (typeof coreModel.setParamFloat === "function") {
         if (add && typeof coreModel.getParamFloat === "function") {
-          const cur = coreModel.getParamFloat(idC2 || idC4) || 0;
-          coreModel.setParamFloat(idC2 || idC4, cur + value);
+          const cur = coreModel.getParamFloat(idC2) || coreModel.getParamFloat(idC4) || 0;
+          coreModel.setParamFloat(idC2, cur + value);
         } else {
-          coreModel.setParamFloat(idC2 || idC4, value);
+          coreModel.setParamFloat(idC2, value);
+          coreModel.setParamFloat(idC4, value);
+        }
+      }
+      // 3. Fallback for raw parameters array indexing if available
+      if (coreModel._model && typeof coreModel._model.getParameterValueByIndex === "function") {
+        const paramIds = coreModel._parameterIds;
+        if (Array.isArray(paramIds)) {
+          const idx = paramIds.indexOf(idC4) !== -1 ? paramIds.indexOf(idC4) : paramIds.indexOf(idC2);
+          if (idx !== -1 && typeof coreModel._model.setParameterValueByIndex === "function") {
+            if (add) {
+              const cur = coreModel._model.getParameterValueByIndex(idx) || 0;
+              coreModel._model.setParameterValueByIndex(idx, cur + value);
+            } else {
+              coreModel._model.setParameterValueByIndex(idx, value);
+            }
+          }
         }
       }
     } catch (e) {
@@ -212,7 +231,7 @@ export function applyLive2DMultiJointKinematics(
   setParam("ParamEyeBallY", "PARAM_EYE_BALL_Y", eyeBallY);
   setParam("ParamBreath", "PARAM_BREATH", breathCycle);
 
-  // Set Facial & Emotion Parameters
+  // Set Facial & Emotion Parameters (both C4 Param* and C2 PARAM_* standards)
   const finalMouthOpen = Math.max(mouthOpenRatio, motionMouthOpen);
   setParam("ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y", finalMouthOpen);
   setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
@@ -223,6 +242,12 @@ export function applyLive2DMultiJointKinematics(
   setParam("ParamBrowRY", "PARAM_BROW_R_Y", emotionBrowRY);
   setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", emotionBrowAngle);
   setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", emotionBrowAngle);
+
+  // Secondary aliases for custom models that use non-standard naming
+  if (emotionCheek > 0) {
+    setParam("ParamCheekBlush", "PARAM_CHEEK_BLUSH", emotionCheek);
+    setParam("ParamBlush", "PARAM_BLUSH", emotionCheek);
+  }
 
   // Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)
   if (physicsIntensity > 0) {
