@@ -141,6 +141,15 @@ export default function App() {
   const [profiles, setProfiles] = useState<WaifuProfile[]>(loadWaifuProfiles);
   const [activeProfileId, setActiveProfileIdState] = useState<string>(getActiveWaifuId);
 
+  const [trackingEngineEnabled, setTrackingEngineEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const saved = localStorage.getItem("waifu_tracking_engine_enabled");
+      if (saved !== null) return JSON.parse(saved);
+    } catch (e) {}
+    return true;
+  });
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userCount, setUserCount] = useState<number>(0);
   const [hasOwner, setHasOwner] = useState<boolean>(false);
@@ -208,6 +217,11 @@ export default function App() {
       setActiveProfileIdState(settings.activeProfileId);
       setActiveWaifuId(settings.activeProfileId);
     }
+    if (settings.trackingEngineEnabled !== undefined) {
+      const isEnabled = Boolean(settings.trackingEngineEnabled);
+      setTrackingEngineEnabled(isEnabled);
+      localStorage.setItem("waifu_tracking_engine_enabled", JSON.stringify(isEnabled));
+    }
   };
 
   const syncSettingsToServer = async (overrides?: any) => {
@@ -217,6 +231,7 @@ export default function App() {
       ttsConfig: overrides?.ttsConfig || ttsConfig,
       sttConfig: overrides?.sttConfig || sttConfig,
       openwebuiConfig: overrides?.openwebuiConfig || openWebUIConfig,
+      trackingEngineEnabled: overrides?.trackingEngineEnabled !== undefined ? overrides.trackingEngineEnabled : trackingEngineEnabled,
     };
 
     const savedToken = localStorage.getItem("waifu_session_token") || "";
@@ -802,6 +817,7 @@ export default function App() {
             openWebUIConfig={openWebUIConfig}
             ttsConfig={ttsConfig}
             sttConfig={sttConfig}
+            trackingEngineEnabled={trackingEngineEnabled}
             onTTSChange={setTTSConfig}
             onSTTChange={setSTTConfig}
             onMicStatusChange={setMicStatus}
@@ -889,6 +905,11 @@ export default function App() {
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}
         currentUser={currentUser}
+        trackingEngineEnabled={trackingEngineEnabled}
+        onToggleTrackingEngine={(enabled) => {
+          setTrackingEngineEnabled(enabled);
+          localStorage.setItem("waifu_tracking_engine_enabled", JSON.stringify(enabled));
+        }}
       />
 
       {/* Bottom Status Bar / Footer */}

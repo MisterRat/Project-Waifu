@@ -19,15 +19,39 @@ export interface SmtpConfig {
 }
 
 export type EmotionType =
+  | "angry"
+  | "confused"
+  | "crying"
+  | "embarrassed"
+  | "evil"
+  | "excited"
+  | "flirty"
   | "happy"
-  | "blush"
   | "sad"
+  | "scared"
+  | "smirk"
   | "surprised"
   | "thinking"
-  | "excited"
-  | "angry"
-  | "neutral"
-  | "wink";
+  | "tipsy"
+  | "tired";
+
+export const EMOTION_TYPES: { id: EmotionType; label: string; emoji: string }[] = [
+  { id: "happy", label: "Happy", emoji: "😊" },
+  { id: "excited", label: "Excited", emoji: "🤩" },
+  { id: "flirty", label: "Flirty", emoji: "😘" },
+  { id: "smirk", label: "Smirk", emoji: "😏" },
+  { id: "surprised", label: "Surprised", emoji: "😲" },
+  { id: "thinking", label: "Thinking", emoji: "🤔" },
+  { id: "confused", label: "Confused", emoji: "❓" },
+  { id: "embarrassed", label: "Embarrassed", emoji: "😳" },
+  { id: "tipsy", label: "Tipsy", emoji: "🥴" },
+  { id: "tired", label: "Tired", emoji: "🥱" },
+  { id: "sad", label: "Sad", emoji: "😢" },
+  { id: "crying", label: "Crying", emoji: "😭" },
+  { id: "scared", label: "Scared", emoji: "😨" },
+  { id: "angry", label: "Angry", emoji: "💢" },
+  { id: "evil", label: "Evil", emoji: "😈" },
+];
 
 export type MotionType =
   | "nod"
