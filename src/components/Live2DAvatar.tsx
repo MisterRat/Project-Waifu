@@ -1236,12 +1236,73 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         physicsIntensityRef.current
       );
 
-      const effectiveX = isSpeakingRef.current ? 0 : trackingStateRef.current.smoothedX;
-      const effectiveY = isSpeakingRef.current ? 0 : trackingStateRef.current.smoothedY;
+      const effectiveX = isSpeakingRef.current ? 0 : trackingStateRef.current.currentX;
+      const effectiveY = isSpeakingRef.current ? 0 : trackingStateRef.current.currentY;
 
-      const angleX = effectiveX * 22;
-      const angleY = effectiveY * 16;
-      const angleZ = trackingStateRef.current.headAngleZ + trackingStateRef.current.jiggleSway;
+      // Calculate kinematic motion offsets for procedural anime avatar
+      let motionProcAngleX = 0;
+      let motionProcAngleY = 0;
+      let motionProcAngleZ = 0;
+      let motionProcEyeLOverride: number | null = null;
+      let motionProcMouthOpen = 0;
+
+      if (activeMotionRef.current !== "none" && motionStartTimeRef.current) {
+        const elapsed = (Date.now() - motionStartTimeRef.current) / 1000;
+        const duration = 3.5;
+        if (elapsed < duration) {
+          const progress = elapsed / duration;
+          const pRad = progress * Math.PI;
+
+          switch (activeMotionRef.current) {
+            case "nod":
+              motionProcAngleY = Math.sin(progress * Math.PI * 2) * 18;
+              break;
+            case "shake":
+              motionProcAngleX = Math.sin(progress * Math.PI * 3) * 22;
+              break;
+            case "wave":
+              motionProcAngleZ = Math.sin(progress * Math.PI * 2) * 16;
+              break;
+            case "bow":
+              motionProcAngleY = -Math.sin(pRad) * 25;
+              break;
+            case "laugh":
+              motionProcAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 12;
+              motionProcMouthOpen = 0.4;
+              break;
+            case "wink":
+              if (progress < 0.75) {
+                motionProcEyeLOverride = 0;
+              }
+              break;
+            case "check_nails":
+              motionProcAngleX = Math.sin(pRad) * 20;
+              motionProcAngleY = -Math.sin(pRad) * 16;
+              motionProcAngleZ = -Math.sin(pRad) * 12;
+              break;
+            case "jiggle_dance":
+              motionProcAngleZ = Math.sin(progress * Math.PI * 6) * 16;
+              motionProcAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 8;
+              break;
+            case "sigh_tilt":
+              motionProcAngleZ = Math.sin(pRad) * 18;
+              motionProcAngleY = Math.sin(pRad) * 14;
+              motionProcMouthOpen = Math.sin(pRad) * 0.25;
+              break;
+            case "curious_glance":
+              motionProcAngleX = Math.sin(progress * Math.PI * 2) * 22;
+              motionProcAngleZ = Math.sin(progress * Math.PI) * 12;
+              break;
+            case "stretch_wave":
+              motionProcAngleY = Math.sin(pRad) * 18;
+              break;
+          }
+        }
+      }
+
+      const angleX = effectiveX * 22 + motionProcAngleX;
+      const angleY = effectiveY * 16 + motionProcAngleY;
+      const angleZ = -effectiveX * 12 + motionProcAngleZ;
 
       ctx.save();
       ctx.translate(centerX, centerY + breathOffset);
@@ -1364,7 +1425,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         ctx.save();
         ctx.translate(centerXPos + angleX * 0.3, -20 + angleY * 0.3);
 
-        if (emotion === "happy" || emotion === "excited" || (emotion === "flirty" && isLeft)) {
+        if (
+          (isLeft && motionProcEyeLOverride === 0) ||
+          emotion === "happy" ||
+          emotion === "excited" ||
+          (emotion === "flirty" && isLeft)
+        ) {
           ctx.strokeStyle = "#0f172a";
           ctx.lineWidth = 4;
           ctx.beginPath();
@@ -1411,7 +1477,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       ctx.save();
       ctx.translate(angleX * 0.2, 22 + angleY * 0.2);
 
-      const mOpen = mouthOpenRatio;
+      const mOpen = Math.max(mouthOpenRatio, motionProcMouthOpen);
       if (mOpen > 0.08) {
         ctx.fillStyle = "#9f1239";
         ctx.beginPath();
