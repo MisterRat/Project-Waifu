@@ -906,6 +906,9 @@ export default function App() {
         onClose={() => setIsAdminModalOpen(false)}
         currentUser={currentUser}
         trackingEngineEnabled={trackingEngineEnabled}
+        currentEmotion={currentEmotion}
+        currentMotion={currentMotion}
+        activeCharacterName={profiles.find((p) => p.id === activeProfileId)?.name || "Waifu"}
         onToggleTrackingEngine={(enabled) => {
           setTrackingEngineEnabled(enabled);
           localStorage.setItem("waifu_tracking_engine_enabled", JSON.stringify(enabled));
