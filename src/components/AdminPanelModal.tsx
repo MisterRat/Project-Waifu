@@ -1,15 +1,23 @@
 import React, { useState, useEffect } from "react";
 import { User, SmtpConfig } from "../types";
-import { Users, Mail, CheckCircle2, XCircle, Trash2, Shield, ShieldAlert, Send, RefreshCw, X, Loader2, KeyRound } from "lucide-react";
+import { Users, Mail, CheckCircle2, XCircle, Trash2, Shield, ShieldAlert, Send, RefreshCw, X, Loader2, KeyRound, Activity } from "lucide-react";
 
 interface AdminPanelModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: User | null;
+  trackingEngineEnabled?: boolean;
+  onToggleTrackingEngine?: (enabled: boolean) => void;
 }
 
-export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClose, currentUser }) => {
-  const [activeTab, setActiveTab] = useState<"users" | "smtp" | "pin">("users");
+export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
+  isOpen,
+  onClose,
+  currentUser,
+  trackingEngineEnabled = true,
+  onToggleTrackingEngine,
+}) => {
+  const [activeTab, setActiveTab] = useState<"users" | "smtp" | "pin" | "tracking">("users");
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -33,6 +41,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
   const [confirmPin, setConfirmPin] = useState("");
   const [savingPin, setSavingPin] = useState(false);
 
+  const [trackingEnabled, setTrackingEnabled] = useState<boolean>(trackingEngineEnabled ?? true);
+  const [savingTracking, setSavingTracking] = useState(false);
+
+  useEffect(() => {
+    if (trackingEngineEnabled !== undefined) {
+      setTrackingEnabled(trackingEngineEnabled);
+    }
+  }, [trackingEngineEnabled]);
+
   const getAuthHeaders = (): Record<string, string> => {
     const savedToken = localStorage.getItem("waifu_session_token") || "";
     const headers: Record<string, string> = {};
@@ -42,13 +59,56 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     return headers;
   };
 
-  // Load Users and SMTP on mount/tab change
+  // Load Users, SMTP, and Tracking config on mount/tab change
   useEffect(() => {
     if (isOpen && currentUser?.role === "admin") {
       fetchUsers();
       fetchSmtp();
+      fetchTracking();
     }
   }, [isOpen, currentUser]);
+
+  const fetchTracking = async () => {
+    try {
+      const res = await fetch("/api/system/settings", {
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (data?.settings?.trackingEngineEnabled !== undefined) {
+        setTrackingEnabled(Boolean(data.settings.trackingEngineEnabled));
+      }
+    } catch (e) {
+      console.error("Failed to fetch tracking engine state:", e);
+    }
+  };
+
+  const handleToggleTracking = async (newState: boolean) => {
+    setSavingTracking(true);
+    setStatusMessage(null);
+    try {
+      setTrackingEnabled(newState);
+      if (onToggleTrackingEngine) {
+        onToggleTrackingEngine(newState);
+      }
+      const res = await fetch("/api/system/settings", {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ trackingEngineEnabled: newState }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update tracking engine state.");
+      setStatusMessage({
+        type: "success",
+        text: `Tracking Engine module successfully ${newState ? "ENABLED (active cursor & physics tracking)" : "DISABLED (resting idle mode)"}.`,
+      });
+    } catch (err: any) {
+      setStatusMessage({ type: "error", text: err.message });
+    } finally {
+      setSavingTracking(false);
+    }
+  };
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -351,6 +411,18 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
             <KeyRound className="w-4 h-4" />
             <span>Security & PIN</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab("tracking")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-mono text-xs font-semibold border-b-2 transition cursor-pointer ${
+              activeTab === "tracking"
+                ? "border-pink-500 text-pink-400 bg-slate-900/80"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            <span>Tracking Engine</span>
+          </button>
         </div>
 
         {/* Status Message Display */}
@@ -591,7 +663,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                 </button>
               </div>
             </form>
-          ) : (
+          ) : activeTab === "pin" ? (
             <form onSubmit={handlePinChange} className="space-y-4">
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400">
                 🔒 <strong>System Owner Security:</strong> Update your Administrator PIN used for secure System Owner login.
@@ -642,6 +714,58 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                 </button>
               </div>
             </form>
+          ) : (
+            <div className="space-y-6">
+              <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400">
+                ⚙️ <strong>Tracking Engine Module:</strong> Controls the Live2D Tracking &amp; Multi-Joint Kinematics Engine (<code className="text-pink-400 font-mono">src/lib/live2dTracking.ts</code>). Disabling tracking switches the avatars to a static resting pose while maintaining audio lip-sync and expressions.
+              </div>
+
+              <div className="p-5 bg-slate-950/80 border border-slate-800/90 rounded-2xl flex items-center justify-between gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <h4 className="font-semibold text-slate-100 text-sm">Tracking Engine Subsystem</h4>
+                    {trackingEnabled ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Active (ON)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 border border-slate-700 text-slate-400">
+                        <XCircle className="w-3 h-3" />
+                        Disabled (OFF)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    {trackingEnabled
+                      ? "Real-time mouse pointer tracking, head/body angle coupling, and physics spring inertia are currently ACTIVE."
+                      : "Avatars will remain in neutral idle position without following mouse cursor movement."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={trackingEnabled}
+                  disabled={savingTracking}
+                  onClick={() => handleToggleTracking(!trackingEnabled)}
+                  className={`relative inline-flex h-8 w-15 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-pink-500/40 ${
+                    trackingEnabled ? "bg-pink-600" : "bg-slate-700"
+                  } ${savingTracking ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                      trackingEnabled ? "translate-x-7" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-2 border-t border-slate-800/80">
+                <span>Persistence: SQLite system_config (tracking_engine_enabled)</span>
+                <span>Current State: {trackingEnabled ? "Enabled" : "Disabled"}</span>
+              </div>
+            </div>
           )}
         </div>
       </div>

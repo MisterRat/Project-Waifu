@@ -281,7 +281,10 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
       setIsSynthesizing(true);
       if (onAudioVolumeChange) onAudioVolumeChange(0.2);
 
-      const cleanText = testSpeechText.replace(/^\[(happy|blush|sad|surprised|thinking|excited)\]\s*/i, "");
+      const cleanText = testSpeechText.replace(
+        /^\[(angry|confused|crying|embarrassed|evil|excited|flirty|happy|sad|scared|smirk|surprised|thinking|tipsy|tired|blush|neutral)\]\s*/i,
+        ""
+      );
 
       try {
         const blob = await fetchOpenAITTSAudioBlob({

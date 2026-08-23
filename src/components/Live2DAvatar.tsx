@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { EmotionType, MotionType } from "../types";
+import { EmotionType, MotionType, EMOTION_TYPES } from "../types";
 import { loadLive2DFromZip, resolveLive2DModelUrl } from "../lib/live2dZipLoader";
 import {
   createInitialTrackingState,
@@ -37,6 +37,7 @@ interface Live2DAvatarProps {
   characterName: string;
   modelUrl?: string;
   physicsIntensity?: number;
+  trackingEngineEnabled?: boolean;
   onPhysicsIntensityChange?: (intensity: number) => void;
   onModelUrlChange?: (newUrl: string) => void;
   onEmotionChange?: (emotion: EmotionType) => void;
@@ -56,6 +57,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   characterName,
   modelUrl,
   physicsIntensity = 1.0,
+  trackingEngineEnabled = true,
   onPhysicsIntensityChange,
   onModelUrlChange,
   onEmotionChange,
@@ -129,6 +131,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const trackingStateRef = useRef<TrackingState>(createInitialTrackingState());
   const mouseTargetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const physicsIntensityRef = useRef<number>(physicsIntensity ?? 1.0);
+  const trackingEngineEnabledRef = useRef<boolean>(trackingEngineEnabled ?? true);
   const emotionRef = useRef<EmotionType>(emotion);
   const activeMotionRef = useRef<MotionType>(activeMotion);
   const isSpeakingRef = useRef<boolean>(isSpeaking);
@@ -139,7 +142,40 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   }, [physicsIntensity]);
 
   useEffect(() => {
+    trackingEngineEnabledRef.current = trackingEngineEnabled ?? true;
+    if (!trackingEngineEnabled) {
+      mouseTargetRef.current = { x: 0, y: 0 };
+    }
+  }, [trackingEngineEnabled]);
+
+  useEffect(() => {
     emotionRef.current = emotion;
+    if (live2dModelRef.current) {
+      try {
+        const model = live2dModelRef.current;
+        if (typeof (model as any).expression === "function") {
+          const exprMgr = model.internalModel?.motionManager?.expressionManager;
+          const definitions = exprMgr?.definitions || exprMgr?.expressions || [];
+          let matchedExpression: string | number | undefined = undefined;
+          if (Array.isArray(definitions)) {
+            const found = definitions.find((d: any) => {
+              const name = (d.name || d.Name || d.file || d.File || "").toLowerCase();
+              return name.includes(emotion.toLowerCase());
+            });
+            if (found) {
+              matchedExpression = found.name || found.Name;
+            }
+          }
+          if (matchedExpression !== undefined) {
+            (model as any).expression(matchedExpression);
+          } else {
+            (model as any).expression(emotion);
+          }
+        }
+      } catch (e) {
+        // Ignore if model does not have expression file
+      }
+    }
   }, [emotion]);
 
   useEffect(() => {
@@ -157,7 +193,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   // Global mouse tracking across viewport for natural VTuber eye contact and physics response
   useEffect(() => {
     const handleGlobalPointerMove = (e: MouseEvent) => {
-      if (!containerRef.current) return;
+      if (!containerRef.current || !trackingEngineEnabledRef.current) {
+        mouseTargetRef.current = { x: 0, y: 0 };
+        return;
+      }
       const rect = containerRef.current.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
@@ -910,68 +949,145 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           switch (emotionRef.current) {
             case "happy":
               mouthForm = 1.0;
-              cheekBlush = 0.3;
-              browLY = 0.2;
-              browRY = 0.2;
-              break;
-            case "blush":
-              mouthForm = 0.8;
-              cheekBlush = 1.0;
-              browLY = 0.1;
-              browRY = 0.1;
+              cheekBlush = 0.35;
+              browLY = 0.25;
+              browRY = 0.25;
+              browAngle = 0.0;
+              eyeLOpen = 1.05;
+              eyeROpen = 1.05;
               break;
             case "excited":
               mouthForm = 1.0;
               cheekBlush = 0.8;
-              eyeLOpen = 1.3;
-              eyeROpen = 1.3;
-              browLY = 0.6;
-              browRY = 0.6;
+              eyeLOpen = 1.35;
+              eyeROpen = 1.35;
+              browLY = 0.7;
+              browRY = 0.7;
+              browAngle = 0.1;
+              break;
+            case "flirty":
+              mouthForm = 0.85;
+              cheekBlush = 0.7;
+              eyeLOpen = 0.05;
+              eyeROpen = 1.05;
+              browLY = 0.35;
+              browRY = 0.15;
+              browAngle = 0.2;
+              break;
+            case "smirk":
+              mouthForm = 0.75;
+              cheekBlush = 0.2;
+              eyeLOpen = 0.9;
+              eyeROpen = 0.8;
+              browLY = 0.5;
+              browRY = -0.2;
+              browAngle = 0.3;
               break;
             case "surprised":
               mouthForm = 0.0;
+              cheekBlush = 0.2;
               eyeLOpen = 1.4;
               eyeROpen = 1.4;
-              browLY = 0.8;
-              browRY = 0.8;
+              browLY = 0.9;
+              browRY = 0.9;
+              browAngle = 0.0;
+              break;
+            case "thinking":
+              mouthForm = 0.1;
+              cheekBlush = 0.1;
+              eyeLOpen = 0.85;
+              eyeROpen = 0.85;
+              browLY = 0.65;
+              browRY = -0.35;
+              browAngle = 0.2;
+              break;
+            case "confused":
+              mouthForm = -0.2;
+              cheekBlush = 0.1;
+              eyeLOpen = 1.1;
+              eyeROpen = 0.85;
+              browLY = 0.6;
+              browRY = -0.5;
+              browAngle = -0.2;
+              break;
+            case "embarrassed":
+              mouthForm = -0.3;
+              cheekBlush = 1.0;
+              eyeLOpen = 0.8;
+              eyeROpen = 0.8;
+              browLY = -0.3;
+              browRY = -0.3;
+              browAngle = -0.5;
+              break;
+            case "tipsy":
+              mouthForm = 0.6;
+              cheekBlush = 0.95;
+              eyeLOpen = 0.65;
+              eyeROpen = 0.7;
+              browLY = -0.2;
+              browRY = 0.1;
+              browAngle = -0.3;
+              break;
+            case "tired":
+              mouthForm = -0.4;
+              cheekBlush = 0.0;
+              eyeLOpen = 0.45;
+              eyeROpen = 0.45;
+              browLY = -0.4;
+              browRY = -0.4;
+              browAngle = -0.4;
               break;
             case "sad":
               mouthForm = -1.0;
               cheekBlush = 0.0;
               browLY = -0.7;
               browRY = -0.7;
-              browAngle = -0.4;
-              eyeLOpen = 0.8;
-              eyeROpen = 0.8;
-              break;
-            case "angry":
-              mouthForm = -0.8;
-              cheekBlush = 0.0;
-              browLY = -0.8;
-              browRY = -0.8;
-              browAngle = 0.6;
-              eyeLOpen = 0.9;
-              eyeROpen = 0.9;
-              break;
-            case "thinking":
-              mouthForm = 0.2;
-              browLY = 0.6;
-              browRY = -0.3;
+              browAngle = -0.6;
               eyeLOpen = 0.85;
               eyeROpen = 0.85;
               break;
-            case "wink":
-              mouthForm = 0.8;
+            case "crying":
+              mouthForm = -0.95;
               cheekBlush = 0.6;
-              eyeLOpen = 0.0;
-              eyeROpen = 1.0;
+              eyeLOpen = 0.75;
+              eyeROpen = 0.75;
+              browLY = -0.7;
+              browRY = -0.7;
+              browAngle = -0.8;
               break;
-            case "neutral":
+            case "scared":
+              mouthForm = -0.6;
+              cheekBlush = 0.0;
+              eyeLOpen = 1.45;
+              eyeROpen = 1.45;
+              browLY = 0.85;
+              browRY = 0.85;
+              browAngle = -0.6;
+              break;
+            case "angry":
+              mouthForm = -0.85;
+              cheekBlush = 0.0;
+              browLY = -0.8;
+              browRY = -0.8;
+              browAngle = 0.7;
+              eyeLOpen = 0.9;
+              eyeROpen = 0.9;
+              break;
+            case "evil":
+              mouthForm = 0.7;
+              cheekBlush = 0.0;
+              eyeLOpen = 0.75;
+              eyeROpen = 0.75;
+              browLY = -0.6;
+              browRY = -0.6;
+              browAngle = 0.85;
+              break;
             default:
               mouthForm = 0.0;
               cheekBlush = 0.0;
               browLY = 0.0;
               browRY = 0.0;
+              browAngle = 0.0;
               break;
           }
 
@@ -988,6 +1104,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               targetY: mouseTargetRef.current.y,
               deltaTime: dt,
               physicsIntensity: physicsIntensityRef.current,
+              trackingEngineEnabled: trackingEngineEnabledRef.current,
               emotionMouthForm: mouthForm,
               emotionCheek: cheekBlush,
               emotionEyeLOpen: eyeLOpen,
@@ -1190,8 +1307,17 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       ctx.bezierCurveTo(55, -130, -55, -130, -65 + angleX * 0.2, -80 + angleY * 0.2);
       ctx.fill();
 
-      if (emotion === "blush" || emotion === "excited") {
-        ctx.fillStyle = "rgba(244, 63, 94, 0.45)";
+      const hasBlush =
+        emotion === "embarrassed" ||
+        emotion === "tipsy" ||
+        emotion === "flirty" ||
+        emotion === "excited" ||
+        emotion === "crying";
+      if (hasBlush) {
+        ctx.fillStyle =
+          emotion === "tipsy" || emotion === "embarrassed"
+            ? "rgba(244, 63, 94, 0.65)"
+            : "rgba(244, 63, 94, 0.4)";
         ctx.beginPath();
         ctx.ellipse(-38 + angleX * 0.5, 2 + angleY * 0.3, 16, 9, 0, 0, Math.PI * 2);
         ctx.ellipse(38 + angleX * 0.5, 2 + angleY * 0.3, 16, 9, 0, 0, Math.PI * 2);
@@ -1206,12 +1332,22 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       ctx.lineCap = "round";
 
       ctx.beginPath();
-      if (emotion === "sad") {
+      if (emotion === "sad" || emotion === "crying" || emotion === "scared") {
         ctx.moveTo(-48, -42 + angleY * 0.2);
         ctx.lineTo(-22, -36 + angleY * 0.2);
         ctx.moveTo(22, -36 + angleY * 0.2);
         ctx.lineTo(48, -42 + angleY * 0.2);
-      } else if (emotion === "excited" || emotion === "happy") {
+      } else if (emotion === "angry" || emotion === "evil") {
+        ctx.moveTo(-48, -36 + angleY * 0.2);
+        ctx.lineTo(-22, -43 + angleY * 0.2);
+        ctx.moveTo(22, -43 + angleY * 0.2);
+        ctx.lineTo(48, -36 + angleY * 0.2);
+      } else if (emotion === "thinking" || emotion === "confused" || emotion === "smirk") {
+        ctx.moveTo(-48, -45 + angleY * 0.2);
+        ctx.lineTo(-22, -42 + angleY * 0.2);
+        ctx.moveTo(22, -38 + angleY * 0.2);
+        ctx.lineTo(48, -42 + angleY * 0.2);
+      } else if (emotion === "excited" || emotion === "happy" || emotion === "flirty") {
         ctx.moveTo(-48, -40 + angleY * 0.2);
         ctx.quadraticCurveTo(-35, -48, -22, -40 + angleY * 0.2);
         ctx.moveTo(22, -40 + angleY * 0.2);
@@ -1224,11 +1360,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       }
       ctx.stroke();
 
-      const renderEye = (centerXPos: number) => {
+      const renderEye = (centerXPos: number, isLeft: boolean) => {
         ctx.save();
         ctx.translate(centerXPos + angleX * 0.3, -20 + angleY * 0.3);
 
-        if (emotion === "happy" || emotion === "excited") {
+        if (emotion === "happy" || emotion === "excited" || (emotion === "flirty" && isLeft)) {
           ctx.strokeStyle = "#0f172a";
           ctx.lineWidth = 4;
           ctx.beginPath();
@@ -1269,8 +1405,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         ctx.restore();
       };
 
-      renderEye(-35);
-      renderEye(35);
+      renderEye(-35, true);
+      renderEye(35, false);
 
       ctx.save();
       ctx.translate(angleX * 0.2, 22 + angleY * 0.2);
@@ -1292,10 +1428,19 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         ctx.lineCap = "round";
 
         ctx.beginPath();
-        if (emotion === "happy" || emotion === "excited") {
+        if (
+          emotion === "happy" ||
+          emotion === "excited" ||
+          emotion === "flirty" ||
+          emotion === "tipsy"
+        ) {
           ctx.arc(0, -4, 12, Math.PI * 0.25, Math.PI * 0.75);
-        } else if (emotion === "sad") {
+        } else if (emotion === "smirk" || emotion === "evil") {
+          ctx.arc(4, -3, 10, Math.PI * 0.2, Math.PI * 0.7);
+        } else if (emotion === "sad" || emotion === "crying" || emotion === "angry") {
           ctx.arc(0, 8, 12, Math.PI * 1.25, Math.PI * 1.75);
+        } else if (emotion === "scared" || emotion === "surprised") {
+          ctx.ellipse(0, 0, 6, 8, 0, 0, Math.PI * 2);
         } else {
           ctx.arc(-5, -2, 6, Math.PI * 0.2, Math.PI * 0.8);
           ctx.moveTo(0, 2);

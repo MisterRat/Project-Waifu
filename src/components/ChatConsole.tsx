@@ -36,6 +36,7 @@ interface ChatConsoleProps {
   onMicStatusChange?: (status: { isListening: boolean; isTranscribing: boolean; toggleListening: () => void }) => void;
   onEmotionChange?: (emo: EmotionType) => void;
   onMotionChange?: (mo: MotionType) => void;
+  trackingEngineEnabled?: boolean;
 }
 
 export const ChatConsole: React.FC<ChatConsoleProps> = ({
@@ -57,6 +58,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   onMicStatusChange,
   onEmotionChange,
   onMotionChange,
+  trackingEngineEnabled = true,
 }) => {
   const [localProfiles, setLocalProfiles] = useState<WaifuProfile[]>(loadWaifuProfiles);
   const [localActiveProfileId, setLocalActiveProfileId] = useState<string>(getActiveWaifuId);
@@ -861,6 +863,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
             characterName={activeProfile.name}
             modelUrl={activeProfile.live2dModelUrl}
             physicsIntensity={activeProfile.physicsIntensity ?? 1.0}
+            trackingEngineEnabled={trackingEngineEnabled}
             initialScale={activeProfile.live2dScale}
             initialX={activeProfile.live2dX}
             initialY={activeProfile.live2dY}

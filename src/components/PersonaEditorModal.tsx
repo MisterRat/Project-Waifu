@@ -145,7 +145,7 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
       name: "Custom Companion",
       tagline: "Your Personal AI Waifu",
       personalityPrompt:
-        "You are a loving anime AI companion. Keep answers short (1-3 sentences) and use emotion tags like [happy], [blush], [excited].",
+        "You are a loving anime AI companion. Keep answers short (1-3 sentences) and use emotion tags like [happy], [excited], [flirty], [smirk], [surprised], [thinking], [confused], [embarrassed], [tipsy], [tired], [sad], [crying], [scared], [angry], [evil].",
       greetingMessage: "[happy] Hello master! I'm your custom AI companion. How are you feeling today?",
       live2dModelUrl: "",
       ttsVoice: "en-US-AnaNeural",
@@ -352,7 +352,7 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-violet-500/50 leading-relaxed font-mono"
               />
               <span className="text-[10px] text-slate-500 block mt-1">
-                Tip: Instruct the model to begin responses with emotion tags like [happy], [blush], [sad], [thinking].
+                Tip: Instruct the model to begin responses with emotion tags like [happy], [excited], [flirty], [smirk], [surprised], [thinking], [confused], [embarrassed], [tipsy], [tired], [sad], [crying], [scared], [angry], [evil].
               </span>
             </div>
 
