@@ -35,6 +35,7 @@ export interface ParameterUpdateOptions {
   targetY: number; // -1.0 to 1.0
   deltaTime: number; // seconds (e.g. 0.016)
   physicsIntensity: number; // 0.0 to 2.5 (default 1.0)
+  trackingEngineEnabled?: boolean; // simple on/off switch for tracking kinematics
   emotionMouthForm?: number;
   emotionCheek?: number;
   emotionEyeLOpen?: number;
@@ -117,6 +118,7 @@ export function applyLive2DMultiJointKinematics(
 
   const {
     physicsIntensity = 1.0,
+    trackingEngineEnabled = true,
     emotionMouthForm = 0,
     emotionCheek = 0,
     emotionEyeLOpen = 1.0,
@@ -133,9 +135,11 @@ export function applyLive2DMultiJointKinematics(
     isSpeaking = false,
   } = options;
 
-  // Normal look range coordinates (-1 to 1)
-  const lookX = isSpeaking ? 0 : state.currentX;
-  const lookY = isSpeaking ? 0 : state.currentY;
+  // Normal look range coordinates (-1 to 1) - disable tracking if turned off
+  const lookX = !trackingEngineEnabled || isSpeaking ? 0 : state.currentX;
+  const lookY = !trackingEngineEnabled || isSpeaking ? 0 : state.currentY;
+  const effectiveVx = !trackingEngineEnabled ? 0 : state.vx;
+  const effectiveVy = !trackingEngineEnabled ? 0 : state.vy;
 
   // Kinematic Angles Distribution (VTube Studio standard scaling)
   // 1. Head Yaw (ParamAngleX): -30 to +30 degrees
@@ -146,17 +150,17 @@ export function applyLive2DMultiJointKinematics(
 
   // 3. Head Roll / Tilt (ParamAngleZ): -15 to +15 degrees
   // Turning head tilts slightly into the movement + velocity flick
-  const dynamicTilt = -lookX * 12.0 + (state.vx * 0.05 * physicsIntensity);
+  const dynamicTilt = -lookX * 12.0 + (effectiveVx * 0.05 * physicsIntensity);
   const angleZ = dynamicTilt + motionAngleZ;
 
   // 4. Body Yaw (ParamBodyAngleX): Upper torso turns with head (approx 35% of head angle)
-  const bodyAngleX = lookX * 10.0 + (state.vx * 0.08 * physicsIntensity);
+  const bodyAngleX = lookX * 10.0 + (effectiveVx * 0.08 * physicsIntensity);
 
   // 5. Body Pitch / Lean (ParamBodyAngleY): Torso leans forward / backward
   const bodyAngleY = -lookY * 8.0;
 
   // 6. Body Roll / Tilt (ParamBodyAngleZ): Spine lateral sway
-  const dynamicBodyTilt = -lookX * 8.0 + (state.vx * 0.04 * physicsIntensity);
+  const dynamicBodyTilt = -lookX * 8.0 + (effectiveVx * 0.04 * physicsIntensity);
   const bodyAngleZ = dynamicBodyTilt + motionBodyAngleZ;
 
   // 7. Eye Gaze (ParamEyeBallX / ParamEyeBallY): -1 to +1
@@ -168,9 +172,9 @@ export function applyLive2DMultiJointKinematics(
 
   // 9. Dynamic Physics Jiggle Offset (Hair, Bust, Clothes inertia)
   // Calculated from spring displacement and angular acceleration
-  const jiggleDisplacementX = (state.springX - state.currentX) * physicsIntensity * 15.0;
-  const jiggleDisplacementY = (state.springY - state.currentY) * physicsIntensity * 15.0;
-  const velocityImpulse = Math.sqrt(state.vx * state.vx + state.vy * state.vy) * physicsIntensity * 0.2;
+  const jiggleDisplacementX = !trackingEngineEnabled ? 0 : (state.springX - state.currentX) * physicsIntensity * 15.0;
+  const jiggleDisplacementY = !trackingEngineEnabled ? 0 : (state.springY - state.currentY) * physicsIntensity * 15.0;
+  const velocityImpulse = !trackingEngineEnabled ? 0 : Math.sqrt(effectiveVx * effectiveVx + effectiveVy * effectiveVy) * physicsIntensity * 0.2;
 
   // Helper to set parameter value across Cubism 2 (PARAM_*) & Cubism 3/4/5 (Param*)
   const setParam = (idC4: string, idC2: string, value: number, add: boolean = false) => {

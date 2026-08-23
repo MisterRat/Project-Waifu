@@ -23,17 +23,27 @@ export function parseEmotionAndMotionTags(rawText: string, fallbackEmotion: Emot
     };
   }
 
-  const emotionRegex = /\[(happy|blush|sad|surprised|thinking|excited|angry|neutral|wink)\]/gi;
-  const motionRegex = /\[(nod|wave|shake|bow|laugh|wink|check_nails|jiggle_dance|sigh_tilt|curious_glance|stretch_wave)\]/gi;
+  const emotionRegex =
+    /\[(angry|confused|crying|embarrassed|evil|excited|flirty|happy|sad|scared|smirk|surprised|thinking|tipsy|tired|blush|neutral|wink)\]/gi;
+  const motionRegex =
+    /\[(nod|wave|shake|bow|laugh|wink|check_nails|jiggle_dance|sigh_tilt|curious_glance|stretch_wave)\]/gi;
 
   const emotions: EmotionType[] = [];
   const motions: MotionType[] = [];
 
   let match: RegExpExecArray | null;
 
+  const normalizeEmotion = (raw: string): EmotionType => {
+    const lower = raw.toLowerCase();
+    if (lower === "blush") return "embarrassed";
+    if (lower === "wink") return "flirty";
+    if (lower === "neutral") return "happy";
+    return lower as EmotionType;
+  };
+
   const emReg = new RegExp(emotionRegex.source, "gi");
   while ((match = emReg.exec(rawText)) !== null) {
-    const e = match[1].toLowerCase() as EmotionType;
+    const e = normalizeEmotion(match[1]);
     if (!emotions.includes(e)) emotions.push(e);
   }
 
@@ -44,7 +54,10 @@ export function parseEmotionAndMotionTags(rawText: string, fallbackEmotion: Emot
   }
 
   const cleanText = rawText
-    .replace(/\[(happy|blush|sad|surprised|thinking|excited|angry|neutral|wink|nod|wave|shake|bow|laugh)\]\s*/gi, "")
+    .replace(
+      /\[(angry|confused|crying|embarrassed|evil|excited|flirty|happy|sad|scared|smirk|surprised|thinking|tipsy|tired|blush|neutral|nod|wave|shake|bow|laugh|wink|check_nails|jiggle_dance|sigh_tilt|curious_glance|stretch_wave)\]\s*/gi,
+      ""
+    )
     .trim();
 
   const primaryEmotion = emotions.length > 0 ? emotions[0] : fallbackEmotion;
