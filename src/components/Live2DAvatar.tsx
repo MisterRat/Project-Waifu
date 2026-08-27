@@ -467,67 +467,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     return () => cancelAnimationFrame(animId);
   }, [isSpeaking, audioVolume]);
 
-  // Silent Extended Idle Animation Driver (fires a random gesture every 25s if idle)
+  // Silent Extended Idle Animation Driver (disabled to prevent unrequested autonomous gestures)
   useEffect(() => {
-    const IDLE_PERIOD_MS = 25000;
-
-    const idleTimer = setInterval(() => {
-      // Skip if character is currently speaking
-      if (isSpeaking) return;
-
-      const ALL_IDLE_MOTIONS: MotionType[] = [
-        "check_nails",
-        "jiggle_dance",
-        "sigh_tilt",
-        "curious_glance",
-        "stretch_wave",
-        "nod",
-        "wave",
-        "shake",
-        "bow",
-        "laugh",
-        "wink",
-      ];
-
-      const randomMotion = ALL_IDLE_MOTIONS[Math.floor(Math.random() * ALL_IDLE_MOTIONS.length)];
-      let methodBTriggered = false;
-
-      // Method B: Attempt native Live2D motion3 file / motionManager group execution
-      if (live2dStatus === "active" && live2dModelRef.current) {
-        try {
-          const model = live2dModelRef.current;
-          const motionMgr = model.internalModel?.motionManager;
-
-          if (motionMgr) {
-            const definitions = motionMgr.definitions || motionMgr.motionGroups || {};
-            const groupKeys = Object.keys(definitions);
-
-            if (groupKeys.length > 0) {
-              const targetGroup =
-                groupKeys.find((k) => k.toLowerCase().includes("idle")) ||
-                groupKeys[Math.floor(Math.random() * groupKeys.length)];
-
-              if (targetGroup) {
-                motionMgr.startMotion(targetGroup, 0, 2);
-                methodBTriggered = true;
-                triggerMotion(randomMotion);
-                addDebugLog(`[Extended Idle] Executed Method B motion3 from group "${targetGroup}"`);
-              }
-            }
-          }
-        } catch (e) {
-          methodBTriggered = false;
-        }
-      }
-
-      // Method A: Fallback to synthetic procedural motion curves if Method B is unavailable
-      if (!methodBTriggered) {
-        triggerMotion(randomMotion);
-        addDebugLog(`[Extended Idle] Executed Method A synthetic idle gesture: [${randomMotion}]`);
-      }
-    }, IDLE_PERIOD_MS);
-
-    return () => clearInterval(idleTimer);
+    // Autonomous gesture dispatch is disabled so motions only fire when triggered by chat tags or manual test controls
   }, [isSpeaking, live2dStatus]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {

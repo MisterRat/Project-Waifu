@@ -818,6 +818,8 @@ export default function App() {
             ttsConfig={ttsConfig}
             sttConfig={sttConfig}
             trackingEngineEnabled={trackingEngineEnabled}
+            emotion={currentEmotion}
+            motion={currentMotion}
             onTTSChange={setTTSConfig}
             onSTTChange={setSTTConfig}
             onMicStatusChange={setMicStatus}

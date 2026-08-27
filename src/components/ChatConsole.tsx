@@ -23,6 +23,8 @@ interface ChatConsoleProps {
   sttConfig: STTConfig;
   profiles?: WaifuProfile[];
   activeProfileId?: string;
+  emotion?: EmotionType;
+  motion?: MotionType;
   onSwitchWaifu?: (id: string) => void;
   onSaveProfile?: (updatedProfile: WaifuProfile) => void;
   onCreateProfile?: (newProfile: WaifuProfile) => void;
@@ -45,6 +47,8 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   sttConfig,
   profiles: propsProfiles,
   activeProfileId: propsActiveProfileId,
+  emotion: propsEmotion,
+  motion: propsMotion,
   onSwitchWaifu: propsOnSwitchWaifu,
   onSaveProfile: propsOnSaveProfile,
   onCreateProfile: propsOnCreateProfile,
@@ -74,8 +78,20 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   );
 
   const [input, setInput] = useState("");
-  const [currentEmotion, setCurrentEmotion] = useState<EmotionType>("happy");
-  const [currentMotion, setCurrentMotion] = useState<MotionType>("none");
+  const [currentEmotion, setCurrentEmotion] = useState<EmotionType>(propsEmotion || "happy");
+  const [currentMotion, setCurrentMotion] = useState<MotionType>(propsMotion || "none");
+
+  useEffect(() => {
+    if (propsEmotion && propsEmotion !== currentEmotion) {
+      setCurrentEmotion(propsEmotion);
+    }
+  }, [propsEmotion]);
+
+  useEffect(() => {
+    if (propsMotion && propsMotion !== currentMotion) {
+      setCurrentMotion(propsMotion);
+    }
+  }, [propsMotion]);
 
   const handleEmotionChange = (emo: EmotionType) => {
     setCurrentEmotion(emo);
