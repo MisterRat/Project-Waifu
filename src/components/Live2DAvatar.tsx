@@ -7,6 +7,7 @@ import {
   applyLive2DMultiJointKinematics,
   TrackingState,
 } from "../lib/live2dTrackingEngine";
+import { logLive2DDiagnostic } from "../lib/live2dDiagnosticLogger";
 import {
   Sparkles,
   Heart,
@@ -122,6 +123,16 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     }
   };
 
+  const [outfitColor, setOutfitColor] = useState<"pink" | "blue" | "purple" | "emerald">("pink");
+  const [showCustomModelModal, setShowCustomModelModal] = useState(false);
+  const [customModelUrl, setCustomModelUrl] = useState(modelUrl || "");
+  const [isExtractingZip, setIsExtractingZip] = useState(false);
+  const [zipSuccessMsg, setZipSuccessMsg] = useState<string | null>(null);
+  const [zipErrorMsg, setZipErrorMsg] = useState<string | null>(null);
+  const [live2dStatus, setLive2dStatus] = useState<"idle" | "loading" | "active" | "error" | "fallback">("idle");
+  const [live2dError, setLive2dError] = useState<string | null>(null);
+  const addDebugLog = (msg: string) => { if (onDebugLog) onDebugLog(msg); };
+
   const [isDraggingWindow, setIsDraggingWindow] = useState(false);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [mouthOpenRatio, setMouthOpenRatio] = useState(0);
@@ -150,6 +161,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
   useEffect(() => {
     emotionRef.current = emotion;
+    logLive2DDiagnostic("avatar", `Received prop emotion change -> "${emotion}"`, {
+      emotion,
+      live2dStatus,
+      hasRiggedModel: !!live2dModelRef.current,
+    });
+
     if (live2dModelRef.current) {
       try {
         const model = live2dModelRef.current;
@@ -166,17 +183,25 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               matchedExpression = found.name || found.Name;
             }
           }
+
+          logLive2DDiagnostic("expression", `Evaluating Live2D expression definitions for emotion "${emotion}"`, {
+            availableDefinitions: Array.isArray(definitions) ? definitions.map((d: any) => d.name || d.Name || d.file || d.File) : [],
+            matchedExpression,
+          });
+
           if (matchedExpression !== undefined) {
             (model as any).expression(matchedExpression);
+            logLive2DDiagnostic("expression", `Dispatched expression(matchedExpression: "${matchedExpression}") to Live2D model`);
           } else {
             (model as any).expression(emotion);
+            logLive2DDiagnostic("expression", `Dispatched fallback expression(emotion: "${emotion}") to Live2D model`);
           }
         }
-      } catch (e) {
-        // Ignore if model does not have expression file
+      } catch (e: any) {
+        logLive2DDiagnostic("expression", `Failed to trigger expression on Live2D model: ${e?.message}`, e);
       }
     }
-  }, [emotion]);
+  }, [emotion, live2dStatus]);
 
   useEffect(() => {
     activeMotionRef.current = activeMotion;
@@ -299,16 +324,25 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     if (motion && motion !== "none") {
       setActiveMotion(motion);
       motionStartTimeRef.current = Date.now();
+      logLive2DDiagnostic("avatar", `Received prop motion change -> "${motion}"`, {
+        motion,
+        live2dStatus,
+        hasRiggedModel: !!live2dModelRef.current,
+      });
 
       if (live2dModelRef.current) {
         try {
           const model = live2dModelRef.current;
           if (typeof model.motion === "function") {
             model.motion(motion);
+            logLive2DDiagnostic("cubism", `Called model.motion("${motion}")`);
           } else if (model.internalModel?.motionManager) {
             model.internalModel.motionManager.startMotion(motion, 0, 2);
+            logLive2DDiagnostic("cubism", `Called motionManager.startMotion("${motion}", 0, 2)`);
           }
-        } catch (e) {}
+        } catch (e: any) {
+          logLive2DDiagnostic("cubism", `Failed to trigger motion on Live2D model: ${e?.message}`, e);
+        }
       }
     } else if (motion === "none") {
       setActiveMotion("none");
@@ -348,17 +382,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       } catch (e) {}
     }
   };
-  const [outfitColor, setOutfitColor] = useState<"pink" | "blue" | "purple" | "emerald">("pink");
-  const [showCustomModelModal, setShowCustomModelModal] = useState(false);
-  const [customModelUrl, setCustomModelUrl] = useState(modelUrl || "");
-
-  const [isExtractingZip, setIsExtractingZip] = useState(false);
-  const [zipSuccessMsg, setZipSuccessMsg] = useState<string | null>(null);
-  const [zipErrorMsg, setZipErrorMsg] = useState<string | null>(null);
-
-  const [live2dStatus, setLive2dStatus] = useState<"idle" | "loading" | "active" | "error" | "fallback">("idle");
-  const [live2dError, setLive2dError] = useState<string | null>(null);
-  const addDebugLog = (msg: string) => { if (onDebugLog) onDebugLog(msg); };
 
   useEffect(() => {
     if (modelUrl) {
@@ -837,6 +860,25 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         }
 
         app.stage.addChild(model);
+
+        // Introspect and log model capabilities (all parameter IDs, expression definitions, motion definitions)
+        try {
+          const core = model.internalModel?.coreModel;
+          const paramIds = core?._parameterIds || (core?.getParameterIds ? core.getParameterIds() : []);
+          const exprMgr = model.internalModel?.motionManager?.expressionManager;
+          const exprList = exprMgr?.definitions || exprMgr?.expressions || [];
+          const motionMgr = model.internalModel?.motionManager;
+          const motionGroups = motionMgr?.definitions ? Object.keys(motionMgr.definitions) : [];
+
+          logLive2DDiagnostic("cubism", `Live2D Model Loaded Successfully: "${characterName}"`, {
+            parameterCount: Array.isArray(paramIds) ? paramIds.length : 0,
+            parameterNamesSample: Array.isArray(paramIds) ? paramIds.slice(0, 35) : [],
+            expressionsAvailable: Array.isArray(exprList) ? exprList.map((e: any) => e.name || e.Name || e.file || e.File) : [],
+            motionGroupsAvailable: motionGroups,
+          });
+        } catch (e: any) {
+          logLive2DDiagnostic("cubism", `Model introspection error: ${e?.message}`);
+        }
 
         // Continuous 60 FPS Multi-Joint Kinematics & Inertia Jiggle Physics Driver
         const updateModelFrame = () => {

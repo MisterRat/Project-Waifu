@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { User, SmtpConfig, EmotionType, MotionType, EMOTION_TYPES } from "../types";
+import { logLive2DDiagnostic, subscribeLive2DLogs, Live2DLogEntry, getLive2DLogHistory } from "../lib/live2dDiagnosticLogger";
 import {
   Users,
   Mail,
@@ -91,6 +92,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   const [trackingEnabled, setTrackingEnabled] = useState<boolean>(trackingEngineEnabled ?? true);
   const [savingTracking, setSavingTracking] = useState(false);
+
+  const [diagnosticLogs, setDiagnosticLogs] = useState<Live2DLogEntry[]>([]);
+
+  useEffect(() => {
+    setDiagnosticLogs(getLive2DLogHistory());
+    const unsub = subscribeLive2DLogs((entry) => {
+      setDiagnosticLogs((prev) => [...prev.slice(-49), entry]);
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (trackingEngineEnabled !== undefined) {
@@ -996,6 +1007,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         key={emo.id}
                         type="button"
                         onClick={() => {
+                          logLive2DDiagnostic("admin", `User clicked Emotion Button -> "${emo.id}" (${emo.label})`);
                           setActiveTestEmotion(emo.id);
                           if (onTestEmotion) {
                             onTestEmotion(emo.id);
@@ -1044,6 +1056,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         key={motion.id}
                         type="button"
                         onClick={() => {
+                          logLive2DDiagnostic("admin", `User clicked Motion Button -> "${motion.id}" (${motion.label})`);
                           setActiveTestMotion(motion.id as MotionType);
                           if (onTestMotion) {
                             onTestMotion(motion.id as MotionType);
@@ -1064,6 +1077,46 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Live Diagnostic Telemetry Log Stream */}
+              <div className="pt-3 border-t border-slate-800/80">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                    Live Diagnostic Telemetry Log ({diagnosticLogs.length})
+                  </h4>
+                  <span className="text-[10px] text-slate-500 font-mono">Real-time signal probe</span>
+                </div>
+                <div className="bg-slate-950 border border-slate-800/90 rounded-xl p-2.5 font-mono text-[11px] max-h-40 overflow-y-auto space-y-1.5 select-text">
+                  {diagnosticLogs.length === 0 ? (
+                    <div className="text-slate-600 italic py-2 text-center">
+                      No events logged yet. Click any emotion or motion button above to inspect data flow.
+                    </div>
+                  ) : (
+                    diagnosticLogs.map((log, idx) => (
+                      <div key={idx} className="leading-tight flex items-start gap-2">
+                        <span className="text-slate-600 shrink-0 text-[10px]">{log.timestamp}</span>
+                        <span
+                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase shrink-0 ${
+                            log.category === "admin"
+                              ? "bg-pink-500/20 text-pink-300 border border-pink-500/30"
+                              : log.category === "avatar"
+                              ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                              : log.category === "cubism"
+                              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                              : log.category === "expression"
+                              ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                              : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                          }`}
+                        >
+                          {log.category}
+                        </span>
+                        <span className="text-slate-300 break-all">{log.message}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
