@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 
 const EMOTION_ALIAS_KEYWORDS: Record<EmotionType, string[]> = {
-  happy: ["happy", "smile", "joy", "laugh", "smile1", "smile2", "f01", "exp01", "exp_01", "笑顔", "喜", "笑", "ニコニコ"],
+  happy: ["happy", "smile", "joy", "laugh", "smile1", "smile2", "f01", "exp01", "exp_01", "default", "normal", "neutral", "base", "idle", "笑顔", "喜", "笑", "ニコニコ", "通常"],
   excited: ["excited", "sparkle", "joy", "surprise", "f02", "exp02", "exp_02", "興奮", "わくわく", "キラキラ"],
   flirty: ["flirty", "wink", "heart", "dere", "blush", "f03", "exp03", "ウィンク", "色気", "照れ", "ハート"],
   smirk: ["smirk", "grin", "evil", "sneer", "f04", "exp04", "ニヤ", "ドヤ", "悪巧み"],
@@ -245,6 +245,13 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               { emotion, matchedExpression, matchedFile, result: res }
             );
           } else {
+            // Clear any active expression on the model so it returns to neutral base
+            try {
+              if (typeof (model as any).expression === "function") {
+                (model as any).expression(null);
+              }
+            } catch (e) {}
+
             // Model has no matching .exp3.json definition -> fallback to procedural curve blending
             logLive2DDiagnostic(
               "procedural",
