@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { EmotionType, MotionType, EMOTION_TYPES } from "../types";
-import { loadLive2DFromZip, resolveLive2DModelUrl } from "../lib/live2dZipLoader";
+import { loadLive2DFromZip, resolveLive2DModelUrl, zipModelRegistry, normalizePath } from "../lib/live2dZipLoader";
 import {
   createInitialTrackingState,
   stepTrackingState,
@@ -836,6 +836,56 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             }
             return targetPath;
           };
+        }
+
+        // Discover & synchronize expressions from registry into expressionManager
+        const reg = zipModelRegistry.get(actualModelUrl) || (customModelUrl ? zipModelRegistry.get(customModelUrl) : undefined);
+        if (reg && reg.pathMap && model.internalModel?.motionManager) {
+          const motionMgr = model.internalModel.motionManager;
+          const exprFiles = Object.keys(reg.pathMap).filter((k) => {
+            const l = k.toLowerCase();
+            return (l.endsWith(".exp3.json") || l.endsWith(".exp.json")) && !k.startsWith("blob:");
+          });
+
+          if (exprFiles.length > 0) {
+            if (!motionMgr.expressionManager) {
+              try {
+                if (typeof (model.internalModel as any).createExpressionManager === "function") {
+                  motionMgr.expressionManager = (model.internalModel as any).createExpressionManager();
+                }
+              } catch (e) {}
+            }
+
+            if (motionMgr.expressionManager) {
+              const exprMgr = motionMgr.expressionManager;
+              const curDefs: any[] = Array.isArray(exprMgr.definitions) ? exprMgr.definitions : [];
+
+              for (const exprFile of exprFiles) {
+                const norm = normalizePath(exprFile);
+                const filename = norm.split("/").pop() || norm;
+                const exprName = filename.replace(/\.(exp3|exp)\.json$/i, "");
+                const exists = curDefs.some((d: any) => {
+                  const dName = String(d.Name || d.name || "").toLowerCase();
+                  const dFile = String(d.File || d.file || "").toLowerCase();
+                  return (
+                    dName === exprName.toLowerCase() ||
+                    dFile === norm.toLowerCase() ||
+                    dFile.endsWith(filename.toLowerCase())
+                  );
+                });
+
+                if (!exists) {
+                  curDefs.push({
+                    Name: exprName,
+                    name: exprName,
+                    File: norm,
+                    file: norm,
+                  });
+                }
+              }
+              exprMgr.definitions = curDefs;
+            }
+          }
         }
 
         // Instrument ExpressionManager with detailed fetch & error logging

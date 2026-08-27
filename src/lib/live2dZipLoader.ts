@@ -253,7 +253,76 @@ export function hydrateFromUnpackedData(
     }
   }
 
-  const rootModelBlob = new Blob([data.modelJsonText], { type: "application/json" });
+  let modelJsonText = data.modelJsonText;
+  try {
+    const modelJsonObj = JSON.parse(modelJsonText);
+    modelJsonObj.FileReferences = modelJsonObj.FileReferences || {};
+
+    const existingExpressions: any[] = Array.isArray(modelJsonObj.FileReferences.Expressions)
+      ? modelJsonObj.FileReferences.Expressions
+      : [];
+
+    const assetKeys = Object.keys(data.assets);
+    const discoveredExpFiles = assetKeys.filter((p) => {
+      const l = p.toLowerCase();
+      return l.endsWith(".exp3.json") || l.endsWith(".exp.json");
+    });
+
+    for (const expPath of discoveredExpFiles) {
+      const norm = normalizePath(expPath);
+      const filename = norm.split("/").pop() || norm;
+      const exprName = filename.replace(/\.(exp3|exp)\.json$/i, "");
+
+      const alreadyExists = existingExpressions.some((e: any) => {
+        const eName = String(e.Name || e.name || "").toLowerCase();
+        const eFile = String(e.File || e.file || "").toLowerCase();
+        return (
+          eName === exprName.toLowerCase() ||
+          eFile === norm.toLowerCase() ||
+          eFile.endsWith(filename.toLowerCase())
+        );
+      });
+
+      if (!alreadyExists) {
+        existingExpressions.push({
+          Name: exprName,
+          File: norm,
+        });
+      }
+    }
+
+    modelJsonObj.FileReferences.Expressions = existingExpressions;
+
+    // Discover motions
+    modelJsonObj.FileReferences.Motions = modelJsonObj.FileReferences.Motions || {};
+    const discoveredMotionFiles = assetKeys.filter((p) => {
+      const l = p.toLowerCase();
+      return l.endsWith(".motion3.json") || l.endsWith(".mtn");
+    });
+
+    for (const motPath of discoveredMotionFiles) {
+      const norm = normalizePath(motPath);
+      const filename = norm.split("/").pop() || norm;
+      const motionGroup = filename.replace(/\.(motion3|mtn)\.json$/i, "").replace(/\.mtn$/i, "") || "Idle";
+
+      const currentGroup = modelJsonObj.FileReferences.Motions[motionGroup] || [];
+      const alreadyExists = currentGroup.some((m: any) => {
+        const mFile = String(m.File || m.file || "").toLowerCase();
+        return mFile === norm.toLowerCase() || mFile.endsWith(filename.toLowerCase());
+      });
+
+      if (!alreadyExists) {
+        currentGroup.push({ File: norm });
+        modelJsonObj.FileReferences.Motions[motionGroup] = currentGroup;
+      }
+    }
+
+    modelJsonText = JSON.stringify(modelJsonObj, null, 2);
+  } catch (err) {
+    console.warn("Could not enhance cached modelJsonText with assets:", err);
+  }
+
+  const rootModelBlob = new Blob([modelJsonText], { type: "application/json" });
   const rootBlobUrl = URL.createObjectURL(rootModelBlob);
 
   const entryData = { rootBlobUrl, pathMap };
@@ -343,9 +412,86 @@ export async function unpackZipData(
     }
   }
 
-  // Read root .model3.json
+  // Read and enhance root .model3.json with any auto-discovered expression & motion files
   const modelJsonEntry = zip.files[modelJsonPath];
-  const modelJsonText = await modelJsonEntry.async("text");
+  let modelJsonText = await modelJsonEntry.async("text");
+
+  try {
+    const modelJsonObj = JSON.parse(modelJsonText);
+    modelJsonObj.FileReferences = modelJsonObj.FileReferences || {};
+
+    // Auto-discover all .exp3.json / .exp.json files in the ZIP archive
+    const existingExpressions: any[] = Array.isArray(modelJsonObj.FileReferences.Expressions)
+      ? modelJsonObj.FileReferences.Expressions
+      : [];
+
+    const discoveredExpFiles = fileEntries.filter((p) => {
+      const l = p.toLowerCase();
+      return l.endsWith(".exp3.json") || l.endsWith(".exp.json");
+    });
+
+    for (const expZipPath of discoveredExpFiles) {
+      let relPath = expZipPath;
+      if (baseFolder && expZipPath.startsWith(baseFolder)) {
+        relPath = expZipPath.substring(baseFolder.length);
+      }
+      const norm = normalizePath(relPath);
+      const filename = norm.split("/").pop() || norm;
+      const exprName = filename.replace(/\.(exp3|exp)\.json$/i, "");
+
+      const alreadyExists = existingExpressions.some((e: any) => {
+        const eName = String(e.Name || e.name || "").toLowerCase();
+        const eFile = String(e.File || e.file || "").toLowerCase();
+        return (
+          eName === exprName.toLowerCase() ||
+          eFile === norm.toLowerCase() ||
+          eFile.endsWith(filename.toLowerCase())
+        );
+      });
+
+      if (!alreadyExists) {
+        existingExpressions.push({
+          Name: exprName,
+          File: norm,
+        });
+      }
+    }
+
+    modelJsonObj.FileReferences.Expressions = existingExpressions;
+
+    // Auto-discover all .motion3.json / .mtn files if not already defined
+    modelJsonObj.FileReferences.Motions = modelJsonObj.FileReferences.Motions || {};
+    const discoveredMotionFiles = fileEntries.filter((p) => {
+      const l = p.toLowerCase();
+      return l.endsWith(".motion3.json") || l.endsWith(".mtn");
+    });
+
+    for (const motZipPath of discoveredMotionFiles) {
+      let relPath = motZipPath;
+      if (baseFolder && motZipPath.startsWith(baseFolder)) {
+        relPath = motZipPath.substring(baseFolder.length);
+      }
+      const norm = normalizePath(relPath);
+      const filename = norm.split("/").pop() || norm;
+      const motionGroup = filename.replace(/\.(motion3|mtn)\.json$/i, "").replace(/\.mtn$/i, "") || "Idle";
+
+      const currentGroup = modelJsonObj.FileReferences.Motions[motionGroup] || [];
+      const alreadyExists = currentGroup.some((m: any) => {
+        const mFile = String(m.File || m.file || "").toLowerCase();
+        return mFile === norm.toLowerCase() || mFile.endsWith(filename.toLowerCase());
+      });
+
+      if (!alreadyExists) {
+        currentGroup.push({ File: norm });
+        modelJsonObj.FileReferences.Motions[motionGroup] = currentGroup;
+      }
+    }
+
+    modelJsonText = JSON.stringify(modelJsonObj, null, 2);
+  } catch (err) {
+    console.warn("Could not enhance model3.json with discovered expressions/motions:", err);
+  }
+
   const rootModelBlob = new Blob([modelJsonText], { type: "application/json" });
   const rootBlobUrl = URL.createObjectURL(rootModelBlob);
 
