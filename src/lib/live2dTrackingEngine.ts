@@ -36,6 +36,7 @@ export interface ParameterUpdateOptions {
   deltaTime: number; // seconds (e.g. 0.016)
   physicsIntensity: number; // 0.0 to 2.5 (default 1.0)
   trackingEngineEnabled?: boolean; // simple on/off switch for tracking kinematics
+  hasNativeExpressions?: boolean; // when true, preserves native .exp3.json parameters
   emotionMouthForm?: number;
   emotionCheek?: number;
   emotionEyeLOpen?: number;
@@ -234,19 +235,22 @@ export function applyLive2DMultiJointKinematics(
   // Set Facial & Emotion Parameters (both C4 Param* and C2 PARAM_* standards)
   const finalMouthOpen = Math.max(mouthOpenRatio, motionMouthOpen);
   setParam("ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y", finalMouthOpen);
-  setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
-  setParam("ParamCheek", "PARAM_CHEEK", emotionCheek);
-  setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", emotionEyeLOpen);
-  setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", emotionEyeROpen);
-  setParam("ParamBrowLY", "PARAM_BROW_L_Y", emotionBrowLY);
-  setParam("ParamBrowRY", "PARAM_BROW_R_Y", emotionBrowRY);
-  setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", emotionBrowAngle);
-  setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", emotionBrowAngle);
 
-  // Secondary aliases for custom models that use non-standard naming
-  if (emotionCheek > 0) {
-    setParam("ParamCheekBlush", "PARAM_CHEEK_BLUSH", emotionCheek);
-    setParam("ParamBlush", "PARAM_BLUSH", emotionCheek);
+  // If the model does not have native .exp3.json expression files, apply synthetic procedural emotion curves
+  if (!options.hasNativeExpressions) {
+    setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
+    setParam("ParamCheek", "PARAM_CHEEK", emotionCheek);
+    setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", emotionEyeLOpen);
+    setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", emotionEyeROpen);
+    setParam("ParamBrowLY", "PARAM_BROW_L_Y", emotionBrowLY);
+    setParam("ParamBrowRY", "PARAM_BROW_R_Y", emotionBrowRY);
+    setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", emotionBrowAngle);
+    setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", emotionBrowAngle);
+
+    if (emotionCheek > 0) {
+      setParam("ParamCheekBlush", "PARAM_CHEEK_BLUSH", emotionCheek);
+      setParam("ParamBlush", "PARAM_BLUSH", emotionCheek);
+    }
   }
 
   // Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)

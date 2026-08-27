@@ -1108,6 +1108,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                               ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                               : log.category === "expression"
                               ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                              : log.category === "model-file"
+                              ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                              : log.category === "procedural"
+                              ? "bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30"
                               : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
                           }`}
                         >

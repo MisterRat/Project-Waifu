@@ -6,7 +6,7 @@
 
 export interface Live2DLogEntry {
   timestamp: string;
-  category: "admin" | "avatar" | "canvas" | "cubism" | "expression";
+  category: "admin" | "avatar" | "canvas" | "cubism" | "expression" | "model-file" | "procedural";
   message: string;
   data?: any;
 }
@@ -44,6 +44,8 @@ export function logLive2DDiagnostic(
     canvas: "background: #06b6d4; color: black; padding: 2px 5px; border-radius: 3px; font-weight: bold;",
     cubism: "background: #10b981; color: black; padding: 2px 5px; border-radius: 3px; font-weight: bold;",
     expression: "background: #f59e0b; color: black; padding: 2px 5px; border-radius: 3px; font-weight: bold;",
+    "model-file": "background: #0ea5e9; color: white; padding: 2px 5px; border-radius: 3px; font-weight: bold;",
+    procedural: "background: #a855f7; color: white; padding: 2px 5px; border-radius: 3px; font-weight: bold;",
   };
 
   const badgeStyle = styleMap[category] || "background: #64748b; color: white;";

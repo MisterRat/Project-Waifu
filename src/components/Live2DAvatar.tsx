@@ -31,6 +31,38 @@ import {
   RotateCw,
 } from "lucide-react";
 
+const EMOTION_ALIAS_KEYWORDS: Record<EmotionType, string[]> = {
+  happy: ["happy", "smile", "joy", "laugh", "smile1", "smile2", "f01", "exp01", "exp_01", "笑顔", "喜", "笑", "ニコニコ"],
+  excited: ["excited", "sparkle", "joy", "surprise", "f02", "exp02", "exp_02", "興奮", "わくわく", "キラキラ"],
+  flirty: ["flirty", "wink", "heart", "dere", "blush", "f03", "exp03", "ウィンク", "色気", "照れ", "ハート"],
+  smirk: ["smirk", "grin", "evil", "sneer", "f04", "exp04", "ニヤ", "ドヤ", "悪巧み"],
+  surprised: ["surprised", "surprise", "shock", "gasp", "f05", "exp05", "驚き", "驚", "びっくり", "ショック"],
+  embarrassed: ["embarrassed", "embarrased", "blush", "shy", "dere", "cheek", "red", "f06", "exp06", "照れ", "赤面", "恥ずかしい", "デレ"],
+  tipsy: ["tipsy", "drunk", "blush", "flush", "f07", "exp07", "酔い", "赤面", "ほろ酔い"],
+  tired: ["tired", "sleepy", "exhausted", "yawn", "sigh", "f08", "exp08", "眠い", "疲れ", "ため息", "ねむ"],
+  sad: ["sad", "sorrow", "grief", "depressed", "f09", "exp09", "悲しみ", "悲", "憂鬱", "落ち込み"],
+  crying: ["crying", "cry", "tear", "tears", "weep", "sob", "f10", "exp10", "泣き", "号泣", "涙", "なみだ"],
+  scared: ["scared", "fear", "panic", "shiver", "f11", "exp11", "恐れ", "怖", "怯え", "青ざめ", "ガタガタ"],
+  angry: ["angry", "rage", "mad", "fury", "f12", "exp12", "怒り", "怒", "激怒", "おこ"],
+  evil: ["evil", "villain", "dark", "wicked", "f13", "exp13", "悪", "黒", "企み"],
+  thinking: ["thinking", "think", "wonder", "hmm", "f14", "exp14", "考え", "困り", "思案"],
+  confused: ["confused", "troubled", "puzzled", "question", "f15", "exp15", "困惑", "困り", "はてな", "疑問"],
+};
+
+const MOTION_ALIAS_KEYWORDS: Record<string, string[]> = {
+  nod: ["nod", "agree", "yes", "頷き", "うなずき", "tapbody", "tap_body", "idle"],
+  shake: ["shake", "no", "headshake", "首振り", "いやいや"],
+  wave: ["wave", "greeting", "hello", "手を振る", "挨拶"],
+  bow: ["bow", "reverence", "お辞儀", "礼"],
+  laugh: ["laugh", "chuckle", "giggle", "笑い", "爆笑"],
+  wink: ["wink", "ウィンク"],
+  check_nails: ["check_nails", "idle", "touch", "tap"],
+  jiggle_dance: ["dance", "jiggle", "special", "tap_body"],
+  sigh_tilt: ["sigh", "tilt", "troubled", "ため息"],
+  curious_glance: ["curious", "glance", "look", "キョロキョロ"],
+  stretch_wave: ["stretch", "wave", "伸び"],
+};
+
 interface Live2DAvatarProps {
   emotion: EmotionType;
   motion?: MotionType;
@@ -161,11 +193,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
   useEffect(() => {
     emotionRef.current = emotion;
-    logLive2DDiagnostic("avatar", `Received prop emotion change -> "${emotion}"`, {
-      emotion,
-      live2dStatus,
-      hasRiggedModel: !!live2dModelRef.current,
-    });
 
     if (live2dModelRef.current) {
       try {
@@ -174,32 +201,71 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           const exprMgr = model.internalModel?.motionManager?.expressionManager;
           const definitions = exprMgr?.definitions || exprMgr?.expressions || [];
           let matchedExpression: string | number | undefined = undefined;
-          if (Array.isArray(definitions)) {
-            const found = definitions.find((d: any) => {
-              const name = (d.name || d.Name || d.file || d.File || "").toLowerCase();
-              return name.includes(emotion.toLowerCase());
-            });
-            if (found) {
-              matchedExpression = found.name || found.Name;
+          let matchedDefName: string = "";
+          let matchedFile: string = "";
+
+          if (Array.isArray(definitions) && definitions.length > 0) {
+            const keywords = EMOTION_ALIAS_KEYWORDS[emotion] || [emotion.toLowerCase()];
+            let bestIdx = -1;
+            let bestDef: any = null;
+
+            for (let i = 0; i < definitions.length; i++) {
+              const def = definitions[i];
+              const nameStr = String(def.name || def.Name || "").toLowerCase();
+              const fileStr = String(def.file || def.File || "").toLowerCase();
+              const filenameOnly = fileStr.split("/").pop()?.replace(/\.(exp3|exp)\.json$/i, "").toLowerCase() || "";
+
+              const matchFound = keywords.some(
+                (kw) =>
+                  nameStr === kw.toLowerCase() ||
+                  filenameOnly === kw.toLowerCase() ||
+                  nameStr.includes(kw.toLowerCase()) ||
+                  fileStr.includes(kw.toLowerCase())
+              );
+
+              if (matchFound) {
+                bestIdx = i;
+                bestDef = def;
+                break;
+              }
+            }
+
+            if (bestDef) {
+              matchedExpression = bestDef.name || bestDef.Name || bestDef.file || bestDef.File || bestIdx;
+              matchedDefName = bestDef.name || bestDef.Name || `index_${bestIdx}`;
+              matchedFile = bestDef.file || bestDef.File || `${matchedDefName}.exp3.json`;
             }
           }
 
-          logLive2DDiagnostic("expression", `Evaluating Live2D expression definitions for emotion "${emotion}"`, {
-            availableDefinitions: Array.isArray(definitions) ? definitions.map((d: any) => d.name || d.Name || d.file || d.File) : [],
-            matchedExpression,
-          });
-
           if (matchedExpression !== undefined) {
-            (model as any).expression(matchedExpression);
-            logLive2DDiagnostic("expression", `Dispatched expression(matchedExpression: "${matchedExpression}") to Live2D model`);
+            const res = (model as any).expression(matchedExpression);
+            logLive2DDiagnostic(
+              "model-file",
+              `[Model File] Executing native expression file for "${emotion}": "${matchedFile}" (Name: "${matchedDefName}")`,
+              { emotion, matchedExpression, matchedFile, result: res }
+            );
           } else {
-            (model as any).expression(emotion);
-            logLive2DDiagnostic("expression", `Dispatched fallback expression(emotion: "${emotion}") to Live2D model`);
+            // Model has no matching .exp3.json definition -> fallback to procedural curve blending
+            logLive2DDiagnostic(
+              "procedural",
+              `[Procedural Engine] No model file matched for "${emotion}". Applying procedural facial curve synthesis.`,
+              {
+                emotion,
+                availableDefinitions: Array.isArray(definitions)
+                  ? definitions.map((d: any) => d.file || d.name || d.Name)
+                  : [],
+              }
+            );
           }
         }
       } catch (e: any) {
         logLive2DDiagnostic("expression", `Failed to trigger expression on Live2D model: ${e?.message}`, e);
       }
+    } else {
+      logLive2DDiagnostic(
+        "procedural",
+        `[Procedural Engine] Rendering procedural canvas emotion "${emotion}" (No Live2D model mounted)`
+      );
     }
   }, [emotion, live2dStatus]);
 
@@ -324,25 +390,55 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     if (motion && motion !== "none") {
       setActiveMotion(motion);
       motionStartTimeRef.current = Date.now();
-      logLive2DDiagnostic("avatar", `Received prop motion change -> "${motion}"`, {
-        motion,
-        live2dStatus,
-        hasRiggedModel: !!live2dModelRef.current,
-      });
 
       if (live2dModelRef.current) {
         try {
           const model = live2dModelRef.current;
-          if (typeof model.motion === "function") {
-            model.motion(motion);
-            logLive2DDiagnostic("cubism", `Called model.motion("${motion}")`);
-          } else if (model.internalModel?.motionManager) {
-            model.internalModel.motionManager.startMotion(motion, 0, 2);
-            logLive2DDiagnostic("cubism", `Called motionManager.startMotion("${motion}", 0, 2)`);
+          const motionMgr = model.internalModel?.motionManager;
+          const availableGroups = motionMgr?.definitions ? Object.keys(motionMgr.definitions) : [];
+          
+          let targetGroup: string | null = null;
+          if (availableGroups.length > 0) {
+            const keywords = MOTION_ALIAS_KEYWORDS[motion] || [motion.toLowerCase()];
+            const foundGroup = availableGroups.find((g) =>
+              keywords.some((kw) => g.toLowerCase().includes(kw.toLowerCase()) || kw.toLowerCase().includes(g.toLowerCase()))
+            );
+            if (foundGroup) {
+              targetGroup = foundGroup;
+            }
+          }
+
+          if (targetGroup) {
+            if (typeof model.motion === "function") {
+              const res = model.motion(targetGroup);
+              logLive2DDiagnostic(
+                "model-file",
+                `[Model File] Executing native motion group "${targetGroup}" for motion "${motion}"`,
+                { motion, targetGroup, result: res }
+              );
+            } else if (motionMgr) {
+              const res = motionMgr.startMotion(targetGroup, 0, 2);
+              logLive2DDiagnostic(
+                "model-file",
+                `[Model File] Executing native motion group "${targetGroup}" for motion "${motion}"`,
+                { motion, targetGroup, result: res }
+              );
+            }
+          } else {
+            logLive2DDiagnostic(
+              "procedural",
+              `[Procedural Engine] No model motion group matched for "${motion}". Executing synthetic kinematic gesture animation.`,
+              { motion, availableGroups }
+            );
           }
         } catch (e: any) {
           logLive2DDiagnostic("cubism", `Failed to trigger motion on Live2D model: ${e?.message}`, e);
         }
+      } else {
+        logLive2DDiagnostic(
+          "procedural",
+          `[Procedural Engine] Executing procedural canvas gesture animation for "${motion}"`
+        );
       }
     } else if (motion === "none") {
       setActiveMotion("none");
@@ -718,6 +814,74 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           if (typeof model.internalModel.settings.replaceFiles === "function") {
             model.internalModel.settings.replaceFiles(urlResolver);
           }
+
+          // Hook resolveURL so all expression files (.exp3.json), motion files (.motion3.json), and textures route cleanly
+          const origResolveURL = model.internalModel.settings.resolveURL?.bind(model.internalModel.settings);
+          model.internalModel.settings.resolveURL = function (targetPath: string) {
+            if (urlResolver) {
+              const res = urlResolver(targetPath);
+              if (res && res !== targetPath) {
+                return res;
+              }
+            }
+            if (origResolveURL) {
+              try {
+                const orig = origResolveURL(targetPath);
+                if (urlResolver) {
+                  const resOrig = urlResolver(orig);
+                  if (resOrig) return resOrig;
+                }
+                return orig;
+              } catch (e) {}
+            }
+            return targetPath;
+          };
+        }
+
+        // Instrument ExpressionManager with detailed fetch & error logging
+        if (model.internalModel?.motionManager?.expressionManager) {
+          const exprMgr = model.internalModel.motionManager.expressionManager;
+          if (!exprMgr._isDiagnosticsHooked) {
+            exprMgr._isDiagnosticsHooked = true;
+            const originalLoadExpression = exprMgr.loadExpression?.bind(exprMgr);
+            if (originalLoadExpression) {
+              exprMgr.loadExpression = async function (index: number) {
+                const def = this.definitions?.[index] || this.expressions?.[index];
+                const targetFile = def?.file || def?.File || def?.name || def?.Name || index;
+                logLive2DDiagnostic("expression", `[Cubism Core] Loading expression file [${index}]: "${targetFile}"`, { def });
+                try {
+                  const res = await originalLoadExpression(index);
+                  logLive2DDiagnostic("expression", `[Cubism Core] Successfully loaded expression [${index}]: "${targetFile}"`);
+                  return res;
+                } catch (err: any) {
+                  logLive2DDiagnostic("expression", `[Cubism Core] Error loading expression file [${index}] ("${targetFile}"): ${err?.message}`, err);
+                  throw err;
+                }
+              };
+            }
+          }
+        }
+
+        // Instrument MotionManager with detailed execution logging
+        if (model.internalModel?.motionManager) {
+          const motionMgr = model.internalModel.motionManager;
+          if (!motionMgr._isDiagnosticsHooked) {
+            motionMgr._isDiagnosticsHooked = true;
+            const originalStartMotion = motionMgr.startMotion?.bind(motionMgr);
+            if (originalStartMotion) {
+              motionMgr.startMotion = async function (group: string, index: number, priority: number) {
+                logLive2DDiagnostic("cubism", `[Cubism Core] Starting motion group "${group}" [index: ${index}, priority: ${priority}]`);
+                try {
+                  const res = await originalStartMotion(group, index, priority);
+                  logLive2DDiagnostic("cubism", `[Cubism Core] Motion group "${group}" dispatched successfully`, { result: res });
+                  return res;
+                } catch (err: any) {
+                  logLive2DDiagnostic("cubism", `[Cubism Core] Motion group "${group}" error: ${err?.message}`, err);
+                  throw err;
+                }
+              };
+            }
+          }
         }
 
         // Robust physics interceptor supporting both Cubism 4 (evaluate) and Cubism 2 (update)
@@ -812,12 +976,27 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           const motionMgr = model.internalModel?.motionManager;
           const motionGroups = motionMgr?.definitions ? Object.keys(motionMgr.definitions) : [];
 
+          const expressionsList = Array.isArray(exprList) ? exprList.map((e: any) => e.file || e.File || e.name || e.Name) : [];
+
           logLive2DDiagnostic("cubism", `Live2D Model Loaded Successfully: "${characterName}"`, {
             parameterCount: Array.isArray(paramIds) ? paramIds.length : 0,
             parameterNamesSample: Array.isArray(paramIds) ? paramIds.slice(0, 35) : [],
-            expressionsAvailable: Array.isArray(exprList) ? exprList.map((e: any) => e.name || e.Name || e.file || e.File) : [],
+            expressionsCount: expressionsList.length,
+            expressionsAvailable: expressionsList,
             motionGroupsAvailable: motionGroups,
           });
+
+          if (expressionsList.length > 0) {
+            logLive2DDiagnostic(
+              "model-file",
+              `[Model File Discovery] Detected ${expressionsList.length} native .exp3.json expression file(s) in model: ${expressionsList.join(", ")}`
+            );
+          } else {
+            logLive2DDiagnostic(
+              "procedural",
+              `[Procedural Engine] No native .exp3.json files discovered in model manifest. Synthetic procedural curves active.`
+            );
+          }
         } catch (e: any) {
           logLive2DDiagnostic("cubism", `Model introspection error: ${e?.message}`);
         }
@@ -1080,6 +1259,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
 
           // 4. Inject multi-joint angle coupling and physics jiggle
+          const hasNativeExprs = Boolean(
+            currentModel.internalModel?.motionManager?.expressionManager?.definitions?.length ||
+            currentModel.internalModel?.motionManager?.expressionManager?.expressions?.length
+          );
+
           applyLive2DMultiJointKinematics(
             core,
             trackingStateRef.current,
@@ -1089,6 +1273,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               deltaTime: dt,
               physicsIntensity: physicsIntensityRef.current,
               trackingEngineEnabled: trackingEngineEnabledRef.current,
+              hasNativeExpressions: hasNativeExprs,
               emotionMouthForm: mouthForm,
               emotionCheek: cheekBlush,
               emotionEyeLOpen: eyeLOpen,
