@@ -12,7 +12,7 @@ export interface ParsedTags {
   * Parses emotion and motion tags in LLM responses (e.g. [happy], [blush], [surprised], [nod], [wave], [wink], [shake])
   * Extracts tags to drive Live2D parameters & expressions and returns cleaned text for TTS speech.
   */
-export function parseEmotionAndMotionTags(rawText: string, fallbackEmotion: EmotionType = "happy"): ParsedTags {
+export function parseEmotionAndMotionTags(rawText: string, fallbackEmotion: EmotionType = "neutral"): ParsedTags {
   if (!rawText) {
     return {
       cleanText: "",
@@ -37,7 +37,7 @@ export function parseEmotionAndMotionTags(rawText: string, fallbackEmotion: Emot
     const lower = raw.toLowerCase();
     if (lower === "blush") return "embarrassed";
     if (lower === "wink") return "flirty";
-    if (lower === "neutral") return "happy";
+    if (lower === "neutral") return "neutral";
     return lower as EmotionType;
   };
 

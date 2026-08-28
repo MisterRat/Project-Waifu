@@ -44,7 +44,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   onClose,
   currentUser,
   trackingEngineEnabled = true,
-  currentEmotion = "happy",
+  currentEmotion = "neutral",
   currentMotion = "none",
   activeCharacterName = "Waifu",
   onToggleTrackingEngine,
@@ -905,9 +905,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
                   <button
                     onClick={() => {
-                      setActiveTestEmotion("happy");
+                      setActiveTestEmotion("neutral");
                       setActiveTestMotion("none");
-                      if (onTestEmotion) onTestEmotion("happy");
+                      if (onTestEmotion) onTestEmotion("neutral");
                       if (onTestMotion) onTestMotion("none");
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-mono border border-slate-800 transition cursor-pointer"

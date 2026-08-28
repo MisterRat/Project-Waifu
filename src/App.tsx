@@ -134,7 +134,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"chat" | "persona" | "openwebui" | "voice" | "debug-log">("chat");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const [currentEmotion, setCurrentEmotion] = useState<EmotionType>("happy");
+  const [currentEmotion, setCurrentEmotion] = useState<EmotionType>("neutral");
   const [currentMotion, setCurrentMotion] = useState<MotionType>("none");
   const handleDebugLog = (msg: string) => setDebugLogs(prev => [...prev, msg]);
 

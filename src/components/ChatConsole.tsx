@@ -78,8 +78,18 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   );
 
   const [input, setInput] = useState("");
-  const [currentEmotion, setCurrentEmotion] = useState<EmotionType>(propsEmotion || "happy");
+  const [currentEmotion, setCurrentEmotion] = useState<EmotionType>(propsEmotion || "neutral");
   const [currentMotion, setCurrentMotion] = useState<MotionType>(propsMotion || "none");
+  const avatarSectionRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToAvatarOnSpeak = () => {
+    if (avatarSectionRef.current) {
+      const rect = avatarSectionRef.current.getBoundingClientRect();
+      if (rect.top < -40 || rect.bottom > window.innerHeight + 100 || window.innerWidth < 1024) {
+        avatarSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+  };
 
   useEffect(() => {
     if (propsEmotion && propsEmotion !== currentEmotion) {
@@ -582,6 +592,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
     if (ttsConfig.provider === "openai") {
       setIsSpeaking(true);
       setAudioVolume(0.2);
+      scrollToAvatarOnSpeak();
 
       try {
         const blob = await fetchOpenAITTSAudioBlob({
@@ -683,6 +694,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
 
     window.speechSynthesis.cancel();
     setIsSpeaking(true);
+    scrollToAvatarOnSpeak();
 
     const utterance = new SpeechSynthesisUtterance(cleanSpeech);
     utterance.pitch = activeProfile.ttsPitch || ttsConfig.pitch || 1.1;
@@ -729,7 +741,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
 
     try {
       let replyContent = "";
-      let newEmotion: EmotionType = "happy";
+      let newEmotion: EmotionType = "neutral";
 
       const systemPromptToUse = activeProfile.personalityPrompt || openWebUIConfig.systemPrompt;
 
@@ -869,7 +881,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* Live2D Avatar Area (5 cols) */}
-        <div className="lg:col-span-5">
+        <div ref={avatarSectionRef} className="lg:col-span-5">
           <Live2DAvatar
             key={activeProfile.id + activeProfile.live2dModelUrl}
             onDebugLog={onDebugLog}

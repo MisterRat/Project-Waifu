@@ -32,7 +32,8 @@ import {
 } from "lucide-react";
 
 const EMOTION_ALIAS_KEYWORDS: Record<EmotionType, string[]> = {
-  happy: ["happy", "smile", "joy", "laugh", "smile1", "smile2", "f01", "exp01", "exp_01", "default", "normal", "neutral", "base", "idle", "笑顔", "喜", "笑", "ニコニコ", "通常"],
+  neutral: ["neutral", "default", "normal", "base", "idle", "f00", "exp00", "exp_00", "通常", "デフォルト", "標準", "素顔"],
+  happy: ["happy", "smile", "joy", "laugh", "smile1", "smile2", "f01", "exp01", "exp_01", "笑顔", "喜", "笑", "ニコニコ"],
   excited: ["excited", "sparkle", "joy", "surprise", "f02", "exp02", "exp_02", "興奮", "わくわく", "キラキラ"],
   flirty: ["flirty", "wink", "heart", "dere", "blush", "f03", "exp03", "ウィンク", "色気", "照れ", "ハート"],
   smirk: ["smirk", "grin", "evil", "sneer", "f04", "exp04", "ニヤ", "ドヤ", "悪巧み"],
@@ -82,6 +83,16 @@ interface Live2DAvatarProps {
   initialY?: number;
   onTransformChange?: (scale: number, x: number, y: number) => void;
 }
+
+const isMobileDevice = () => {
+  if (typeof window === "undefined") return false;
+  return (
+    "ontouchstart" in window ||
+    navigator.maxTouchPoints > 0 ||
+    window.matchMedia("(pointer: coarse)").matches ||
+    window.innerWidth < 768
+  );
+};
 
 export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   emotion,
@@ -291,7 +302,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   // Global mouse tracking across viewport for natural VTuber eye contact and physics response
   useEffect(() => {
     const handleGlobalPointerMove = (e: MouseEvent) => {
-      if (!containerRef.current || !trackingEngineEnabledRef.current) {
+      // Never use Look-At tracking on mobile / touch devices
+      if (isMobileDevice() || !containerRef.current || !trackingEngineEnabledRef.current) {
         mouseTargetRef.current = { x: 0, y: 0 };
         return;
       }
@@ -596,10 +608,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    const y = ((e.clientY - rect.top) / rect.height) * 2 - 1;
-    setMousePos({ x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) });
+    if (!isMobileDevice()) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const y = ((e.clientY - rect.top) / rect.height) * 2 - 1;
+      setMousePos({ x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) });
+    }
 
     if (isPanningRef.current && live2dModelRef.current) {
       const dy = e.clientY - dragStartRef.current.y;
@@ -633,53 +647,59 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     scale: 1,
   });
 
+  // Mobile Friendly Touch Interface:
+  // - 1 finger: No intercept. User scrolls the page up/down naturally without being trapped.
+  // - 2 fingers: Move (pan) and pinch-zoom the model simultaneously.
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 1) {
+    if (e.touches.length === 2) {
       isPanningRef.current = true;
-      const touch = e.touches[0];
-      dragStartRef.current = {
-        x: touch.clientX,
-        y: touch.clientY,
-        modelX: live2dModelRef.current?.x || 0,
-        modelY: live2dModelRef.current?.y || 0,
-      };
-    } else if (e.touches.length === 2) {
       isZoomingRef.current = true;
       const t1 = e.touches[0];
       const t2 = e.touches[1];
+      const midX = (t1.clientX + t2.clientX) / 2;
+      const midY = (t1.clientY + t2.clientY) / 2;
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       touchStartRef.current = {
-        x: (t1.clientX + t2.clientX) / 2,
-        y: (t1.clientY + t2.clientY) / 2,
+        x: midX,
+        y: midY,
         distance: dist,
-        modelX: 0,
-        modelY: 0,
+        modelX: live2dModelRef.current?.x || 0,
+        modelY: live2dModelRef.current?.y || 0,
         scale: live2dModelRef.current?.scale.x || 1,
       };
+    } else {
+      // Single finger or >2 fingers: do not intercept panning/zooming
+      isPanningRef.current = false;
+      isZoomingRef.current = false;
     }
   };
 
   const handleTouchMoveCanvas = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 1 && isPanningRef.current && live2dModelRef.current) {
-      const touch = e.touches[0];
-      const dy = touch.clientY - dragStartRef.current.y;
-      const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
-      live2dModelRef.current.x = containerW / 2;
-      live2dModelRef.current.y = dragStartRef.current.modelY + dy;
-      onTransformChange?.(live2dModelRef.current.scale.x, live2dModelRef.current.x, live2dModelRef.current.y);
-    } else if (e.touches.length === 2 && isZoomingRef.current && live2dModelRef.current) {
+    if (e.touches.length === 2 && isZoomingRef.current && live2dModelRef.current) {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
       const t1 = e.touches[0];
       const t2 = e.touches[1];
+      const midY = (t1.clientY + t2.clientY) / 2;
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-      if (touchStartRef.current.distance > 0) {
+
+      // Pinch zoom
+      let newScale = live2dModelRef.current.scale.x;
+      if (touchStartRef.current.distance > 0 && dist > 0) {
         const factor = dist / touchStartRef.current.distance;
-        const newScale = Math.max(0.05, Math.min(10.0, touchStartRef.current.scale * factor));
-        const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
-        live2dModelRef.current.x = containerW / 2;
+        newScale = Math.max(0.05, Math.min(10.0, touchStartRef.current.scale * factor));
         live2dModelRef.current.scale.set(newScale);
         setZoomLevel(newScale);
-        onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
       }
+
+      // 2-finger Pan Y
+      const dy = midY - touchStartRef.current.y;
+      const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
+      live2dModelRef.current.x = containerW / 2;
+      live2dModelRef.current.y = touchStartRef.current.modelY + dy;
+
+      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
     }
   };
 
@@ -788,7 +808,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             backgroundAlpha: 0,
             width,
             height,
-            resolution: window.devicePixelRatio || 1,
+            resolution: Math.min(window.devicePixelRatio || 1, 1.75),
             autoDensity: true,
             powerPreference: "high-performance",
             contextOptions: {
@@ -1820,7 +1840,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         onTouchMove={handleTouchMoveCanvas}
         onTouchEnd={handleTouchEndCanvas}
         onWheel={handleWheel}
-        className="relative w-full h-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group flex-1"
+        style={{ touchAction: "pan-y" }}
+        className="relative w-full h-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group flex-1 touch-pan-y"
       >
         {/* Canvas for WebGL Live2D Model */}
         <canvas

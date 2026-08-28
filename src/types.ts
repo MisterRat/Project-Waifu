@@ -19,23 +19,25 @@ export interface SmtpConfig {
 }
 
 export type EmotionType =
-  | "angry"
-  | "confused"
-  | "crying"
-  | "embarrassed"
-  | "evil"
+  | "neutral"
+  | "happy"
   | "excited"
   | "flirty"
-  | "happy"
-  | "sad"
-  | "scared"
   | "smirk"
   | "surprised"
   | "thinking"
+  | "confused"
+  | "embarrassed"
   | "tipsy"
-  | "tired";
+  | "tired"
+  | "sad"
+  | "crying"
+  | "scared"
+  | "angry"
+  | "evil";
 
 export const EMOTION_TYPES: { id: EmotionType; label: string; emoji: string }[] = [
+  { id: "neutral", label: "Neutral / Default", emoji: "😐" },
   { id: "happy", label: "Happy", emoji: "😊" },
   { id: "excited", label: "Excited", emoji: "🤩" },
   { id: "flirty", label: "Flirty", emoji: "😘" },
