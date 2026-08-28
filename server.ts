@@ -4,7 +4,6 @@ import fs from "fs";
 import JSZip from "jszip";
 import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
 import { pipeline, env } from "@xenova/transformers";
 import {
   getUserByEmail,
@@ -1101,7 +1100,7 @@ async function startServer() {
     }
   });
 
-  // Speech-to-Text Endpoint with built-in Local Whisper STT + OpenWebUI / Gemini fallbacks
+  // Speech-to-Text Endpoint with built-in Local Whisper STT + OpenAI-compatible STT proxy
   app.post("/api/waifu/stt", async (req, res) => {
     try {
       const { pcmFloat32, audioBase64, mimeType = "audio/webm", language = "en-US", openWebUIConfig } = req.body;
@@ -1167,49 +1166,8 @@ async function startServer() {
         }
       }
 
-      // 3. Fallback to Gemini API if key exists and previous methods failed
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (apiKey && audioBase64) {
-        const ai = new GoogleGenAI({ apiKey });
-        const modelsToTry = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
-        let lastError: any = null;
-
-        for (const model of modelsToTry) {
-          for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-              const response = await ai.models.generateContent({
-                model,
-                contents: [
-                  {
-                    inlineData: {
-                      mimeType,
-                      data: audioBase64,
-                    },
-                  },
-                  `Transcribe the spoken audio accurately in language '${language}'. Output ONLY the transcribed plain text and nothing else. Do not add quotes, markdown, or extra formatting.`,
-                ],
-              });
-
-              const text = response.text ? response.text.trim() : "";
-              if (text) {
-                return res.json({ text });
-              }
-            } catch (geminiErr: any) {
-              lastError = geminiErr;
-              const is429 = geminiErr?.status === 429 || String(geminiErr?.message).includes("429") || String(geminiErr?.message).includes("RESOURCE_EXHAUSTED");
-              if (is429 && attempt === 0) {
-                await new Promise((resolve) => setTimeout(resolve, 3500));
-                continue;
-              }
-              console.warn(`Gemini STT model ${model} failed (attempt ${attempt + 1}):`, geminiErr?.message || geminiErr);
-              break;
-            }
-          }
-        }
-      }
-
       return res.status(400).json({
-        error: "Audio transcription failed. Ensure your microphone was enabled and recorded clear speech.",
+        error: "Audio transcription failed. Ensure your microphone is working and your OpenAI-compatible STT endpoint is configured.",
       });
     } catch (err: any) {
       console.error("STT API Error:", err);
@@ -1280,96 +1238,11 @@ async function startServer() {
     }
   });
 
-  // Fallback Gemini Waifu Endpoint (for live testing without local OpenWebUI running)
+  // Companion Chat endpoint without external fallback
   app.post("/api/waifu/chat", async (req, res) => {
-    try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return res.status(400).json({
-          error: "GEMINI_API_KEY is not configured.",
-          fallbackText: "I am ready! Connect your OpenWebUI API in settings or add a GEMINI_API_KEY to test me.",
-        });
-      }
-
-      const { messages, systemPrompt, characterName = "Aoi", emotion = "happy" } = req.body;
-
-      const ai = new GoogleGenAI({ apiKey });
-
-      const defaultSystem = `You are ${characterName}, an affectionate, enthusiastic anime companion (Waifu) live on camera. 
-Keep your responses short, expressive, engaging, and suitable for a voice assistant (1-3 sentences max).
-Express your emotions and body motions using square bracket tags in your response stream!
-Available emotion tags: [happy], [excited], [flirty], [smirk], [surprised], [thinking], [confused], [embarrassed], [tipsy], [tired], [sad], [crying], [scared], [angry], [evil].
-Available motion tags: [nod], [wave], [shake], [bow], [laugh], [wink].
-Example: "[happy][nod] Oh! I'm so glad you spoke to me! What shall we work on today?"`;
-
-      const promptText = Array.isArray(messages)
-        ? messages.map((m: any) => `${m.role}: ${m.content}`).join("\n")
-        : messages || "Hello!";
-
-      const modelsToTry = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
-      let replyText = "";
-      let lastErrMessage = "";
-
-      for (const model of modelsToTry) {
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            const response = await ai.models.generateContent({
-              model,
-              contents: promptText,
-              config: {
-                systemInstruction: systemPrompt || defaultSystem,
-                temperature: 0.8,
-              },
-            });
-            if (response.text) {
-              replyText = response.text;
-              break;
-            }
-          } catch (err: any) {
-            const is429 = err?.status === 429 || String(err?.message).includes("429") || String(err?.message).includes("RESOURCE_EXHAUSTED");
-            if (is429 && attempt === 0) {
-              await new Promise((resolve) => setTimeout(resolve, 3500));
-              continue;
-            }
-            console.warn(`Gemini chat model ${model} failed (attempt ${attempt + 1}):`, err?.message || err);
-            lastErrMessage = err?.message || String(err);
-            break;
-          }
-        }
-        if (replyText) break;
-      }
-
-      if (!replyText) {
-        replyText = "[happy] Konnichiwa! I am ready to assist you.";
-      }
-
-      // Extract emotion tag if present
-      let detectedEmotion = emotion || "happy";
-      const emotionMatch = replyText.match(
-        /^\[(angry|confused|crying|embarrassed|evil|excited|flirty|happy|sad|scared|smirk|surprised|thinking|tipsy|tired|blush|neutral)\]/i
-      );
-      let cleanText = replyText;
-      if (emotionMatch) {
-        const rawTag = emotionMatch[1].toLowerCase();
-        detectedEmotion = rawTag === "blush" ? "embarrassed" : rawTag === "neutral" ? "happy" : rawTag;
-        cleanText = replyText.replace(
-          /^\[(angry|confused|crying|embarrassed|evil|excited|flirty|happy|sad|scared|smirk|surprised|thinking|tipsy|tired|blush|neutral)\]\s*/i,
-          ""
-        );
-      }
-
-      return res.json({
-        content: cleanText,
-        emotion: detectedEmotion,
-        raw: replyText,
-      });
-    } catch (err: any) {
-      console.error("Waifu Chat Error:", err);
-      return res.status(500).json({
-        error: "Failed to generate Waifu response",
-        details: err.message,
-      });
-    }
+    return res.status(400).json({
+      error: "No OpenAI-compatible server configured. Please configure your endpoint in Settings (⚙️).",
+    });
   });
 
   // PWA Service Worker & Manifest headers

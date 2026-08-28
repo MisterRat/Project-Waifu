@@ -459,24 +459,12 @@ export default function App() {
             </h1>
           </div>
 
-            {/* Center / Right: Dedicated Status Lights Bar */}
+            {/* Center / Right: Dedicated Status Controls */}
             <div className="flex items-center space-x-1 sm:space-x-2 md:space-x-3 flex-shrink-0">
-              <div className="flex items-center gap-1 sm:gap-2 bg-slate-950/70 border border-slate-800/80 px-1.5 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-mono shadow-inner">
-                <div className={`w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full flex-shrink-0 ${isOpenWebUIValid ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}></div>
-                <span className="text-slate-300 hidden sm:inline">
-                  API: <strong className={isOpenWebUIValid ? "text-emerald-400 font-semibold" : "text-amber-400 font-semibold"}>
-                    {isOpenWebUIValid ? `OPENAI (${openWebUIConfig.model})` : "GEMINI DIRECT"}
-                  </strong>
-                </span>
-                <span className="text-slate-300 sm:hidden font-semibold text-[10px]">
-                  {isOpenWebUIValid ? "OPENAI" : "GEMINI"}
-                </span>
-              </div>
-
               {/* STT Status Button (Mirrors Microphone State) */}
               <button
                 onClick={handleToggleSTT}
-                className={`hidden sm:flex items-center gap-2 border px-2.5 md:px-3 py-1.5 rounded-xl text-xs font-mono shadow-inner transition cursor-pointer ${
+                className={`flex items-center gap-1.5 sm:gap-2 border px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-mono shadow-inner transition cursor-pointer ${
                   micStatus.isListening
                     ? "bg-rose-950/80 border-rose-500/80 text-rose-200 animate-pulse shadow-rose-500/20"
                     : micStatus.isTranscribing
@@ -492,7 +480,7 @@ export default function App() {
                 }
               >
                 <div
-                  className={`w-2 h-2 rounded-full ${
+                  className={`w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full flex-shrink-0 ${
                     micStatus.isTranscribing
                       ? "bg-violet-400 animate-spin"
                       : micStatus.isListening
@@ -523,7 +511,7 @@ export default function App() {
               {/* TTS Status Button */}
               <button
                 onClick={toggleTTS}
-                className="flex items-center gap-1 sm:gap-2 bg-slate-950/70 hover:bg-slate-900 border border-slate-800/80 hover:border-violet-500/40 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-mono shadow-inner transition cursor-pointer"
+                className="flex items-center gap-1.5 sm:gap-2 bg-slate-950/70 hover:bg-slate-900 border border-slate-800/80 hover:border-violet-500/40 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-mono shadow-inner transition cursor-pointer"
                 title={isTTSEnabled ? "Text-To-Speech (TTS) is ON. Click to toggle OFF." : "Text-To-Speech (TTS) is OFF. Click to toggle ON."}
               >
                 <div className={`w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full flex-shrink-0 ${isTTSEnabled ? "bg-violet-500 animate-pulse" : "bg-slate-600"}`}></div>
@@ -531,22 +519,6 @@ export default function App() {
                   TTS: <strong className={isTTSEnabled ? "text-violet-400 font-semibold" : "text-slate-500 font-semibold"}>
                     {isTTSEnabled ? "ON" : "OFF"}
                   </strong>
-                </span>
-              </button>
-
-              {/* Account / User Sync Button */}
-              <button
-                onClick={() => setIsAuthModalOpen(true)}
-                className="flex items-center gap-1 sm:gap-1.5 bg-slate-950/70 hover:bg-slate-900 border border-slate-800/80 hover:border-pink-500/40 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-mono shadow-inner transition cursor-pointer max-w-[90px] sm:max-w-none truncate"
-                title={currentUser ? `Logged in as ${currentUser.email}` : "Sign in to sync profiles & settings server-side"}
-              >
-                <div className={`w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full flex-shrink-0 ${currentUser ? "bg-pink-500" : "bg-slate-600"}`}></div>
-                <span className="text-slate-300 truncate">
-                  {currentUser ? (
-                    <strong className="text-pink-300 font-semibold">{currentUser.email.split("@")[0]}</strong>
-                  ) : (
-                    <span>Sign In</span>
-                  )}
                 </span>
               </button>
 
@@ -761,7 +733,9 @@ export default function App() {
               </div>
               <div className="flex items-center justify-between text-slate-400 font-mono text-[11px]">
                 <span>Active LLM Provider:</span>
-                <span className="text-slate-200 font-semibold">{isOpenWebUIValid ? "OpenAI / OpenWebUI" : "Gemini Direct"}</span>
+                <span className={`font-semibold ${isOpenWebUIValid ? "text-emerald-400" : "text-amber-400"}`}>
+                  {isOpenWebUIValid ? "OpenAI / OpenWebUI" : "Not Configured"}
+                </span>
               </div>
               <div className="flex items-center justify-between text-slate-400 font-mono text-[11px]">
                 <span>Text-to-Speech (TTS):</span>

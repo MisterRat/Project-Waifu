@@ -734,7 +734,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         Boolean(openWebUIConfig.model?.trim());
 
       if (isOpenWebUIActive) {
-        // Exclusively use OpenWebUI when valid settings exist (do NOT call Gemini)
+        // Exclusively use OpenAI-compatible API (OpenWebUI, Ollama, LM Studio, vLLM, OpenAI)
         try {
           const res = await fetch("/api/openwebui/proxy", {
             method: "POST",
@@ -770,27 +770,13 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
           }
         } catch (e: any) {
           console.error("OpenAI / OpenWebUI chat error:", e);
-          replyContent = `[OpenAI API Error] ${e.message || "Failed to communicate with OpenAI / OpenWebUI server"}. (Note: Gemini API fallback is disabled because an OpenAI-compatible API is configured as your active provider).`;
+          replyContent = `[OpenAI API Error] ${e.message || "Failed to communicate with OpenAI / OpenWebUI server"}.`;
           newEmotion = "sad";
         }
       } else {
-        // Fall back to Gemini API only when OpenWebUI is unconfigured or disabled
-        const res = await fetch("/api/waifu/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: [{ role: "user", content: userText }],
-            systemPrompt: systemPromptToUse,
-            characterName: activeProfile.name,
-            emotion: currentEmotion,
-          }),
-        });
-
-        const data = await res.json();
-        replyContent = data.content || data.raw || "Konnichiwa! I am listening!";
-        if (data.emotion) {
-          newEmotion = data.emotion as EmotionType;
-        }
+        // No OpenAI-compatible server configured: direct user to Settings
+        replyContent = `[Configuration Required] No OpenAI-compatible API server is configured. Please open Settings (⚙️) and enter your OpenAI / OpenWebUI / Ollama / Local Server Base URL, Model name, and API Key to chat.`;
+        newEmotion = "confused";
       }
 
       const parsedTags = parseEmotionAndMotionTags(replyContent, currentEmotion);

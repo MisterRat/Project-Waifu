@@ -124,12 +124,12 @@ export const OpenWebUITester: React.FC<OpenWebUITesterProps> = ({ config, onChan
           {isConfigValid ? (
             <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 font-mono">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              OpenAI / OpenWebUI Active (Gemini Bypass)
+              OpenAI / OpenWebUI Active
             </span>
           ) : (
             <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 font-mono">
               <AlertCircle className="w-4 h-4 text-amber-400" />
-              Gemini Fallback (OpenAI / OpenWebUI Unconfigured)
+              Unconfigured (OpenAI Endpoint Required)
             </span>
           )}
 
@@ -258,10 +258,10 @@ export const OpenWebUITester: React.FC<OpenWebUITesterProps> = ({ config, onChan
       <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 text-xs text-slate-400 space-y-1">
         <div className="font-semibold text-slate-300 flex items-center gap-1.5">
           <ShieldCheck className="w-4 h-4 text-violet-400" />
-          <span>Strict OpenAI-Compatible API Priority Enforcement</span>
+          <span>OpenAI-Compatible API Endpoint Required</span>
         </div>
         <p className="text-[11px] text-slate-400 leading-relaxed">
-          When valid OpenAI / OpenWebUI settings are present (Base URL & Model defined) and enabled, Project Waifu exclusively routes all live companion prompts through your OpenAI-compatible endpoint (OpenWebUI, Ollama, OpenAI) and strictly avoids invoking Gemini directly.
+          Provide your OpenAI-compatible endpoint credentials (OpenWebUI, Ollama, LM Studio, vLLM, or OpenAI). All companion LLM inference is routed through your custom API server.
         </p>
       </div>
 
