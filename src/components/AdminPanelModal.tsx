@@ -413,13 +413,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     <div
       className={`fixed inset-0 z-50 animate-fade-in ${
         isDocked
-          ? "pointer-events-none bg-slate-950/20 backdrop-blur-[1px] flex items-stretch justify-end p-4"
-          : "flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
+          ? "pointer-events-none bg-slate-950/20 backdrop-blur-[1px] flex items-stretch justify-center lg:justify-end p-2 sm:p-4"
+          : "flex items-center justify-center p-2.5 sm:p-4 bg-slate-950/80 backdrop-blur-md"
       }`}
     >
       <div
-        className={`relative w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col pointer-events-auto transition-all duration-300 ${
-          isDocked ? "max-w-md h-full max-h-none border-pink-500/30" : "max-w-3xl max-h-[90vh]"
+        className={`relative w-full max-w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col pointer-events-auto transition-all duration-300 ${
+          isDocked ? "lg:max-w-md h-full max-h-none border-pink-500/30" : "sm:max-w-3xl max-h-[92vh]"
         }`}
       >
         {/* Header */}

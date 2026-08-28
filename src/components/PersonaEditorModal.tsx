@@ -173,7 +173,7 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
   };
 
   const content = (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-5xl w-full shadow-2xl overflow-hidden my-4 mx-auto">
+    <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-5xl w-full shadow-2xl overflow-hidden my-2 sm:my-4 mx-auto">
       
       {/* Header Bar */}
       <div className="bg-slate-950 border-b border-slate-800 p-5 flex flex-wrap items-center justify-between gap-3">
@@ -625,7 +625,7 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto">
       {content}
     </div>
   );

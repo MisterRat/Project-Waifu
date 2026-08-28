@@ -105,7 +105,7 @@ export const OpenWebUITester: React.FC<OpenWebUITesterProps> = ({ config, onChan
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-6 w-full max-w-full overflow-hidden">
       
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-4 gap-4">

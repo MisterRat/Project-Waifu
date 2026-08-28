@@ -123,6 +123,23 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   const [isListening, setIsListening] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth < 1024;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+    };
+  }, []);
+
   const [chatPos, setChatPos] = useState(() => {
     try {
       const saved = localStorage.getItem("waifu_chat_pos");
@@ -148,6 +165,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   }, [chatPos]);
 
   const handleChatResizeSave = () => {
+    if (isMobile) return;
     const el = chatContainerRef.current;
     if (el) {
       const newSize = { width: `${el.offsetWidth}px`, height: `${el.offsetHeight}px` };
@@ -162,6 +180,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   const chatDragRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
 
   const handleChatHeaderMouseDown = (e: React.MouseEvent) => {
+    if (isMobile) return;
     setIsDraggingChat(true);
     chatDragRef.current = {
       startX: e.clientX,
@@ -173,6 +192,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   };
 
   const handleChatHeaderTouchStart = (e: React.TouchEvent) => {
+    if (isMobile) return;
     if (e.touches.length === 1) {
       const touch = e.touches[0];
       setIsDraggingChat(true);
@@ -848,12 +868,12 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full max-w-full overflow-hidden">
       
       {/* Top Waifu Quick Selector & Persona Manager Bar */}
-      <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-lg">
-        <div className="flex items-center gap-2 overflow-x-auto py-1">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5 mr-1">
+      <div className="bg-slate-900 border border-slate-800 p-3 sm:p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 shadow-lg w-full max-w-full overflow-hidden">
+        <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-full">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5 mr-1 flex-shrink-0">
             <Heart className="w-3.5 h-3.5 text-violet-400 fill-violet-400/20" />
             <span>Active Persona:</span>
           </span>
@@ -864,7 +884,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
               <button
                 key={p.id}
                 onClick={() => handleSwitchWaifu(p.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition whitespace-nowrap border ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition whitespace-nowrap border flex-shrink-0 ${
                   isActive
                     ? "bg-violet-600 text-white border-violet-500 shadow-lg shadow-violet-500/20"
                     : "bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-800"
@@ -878,10 +898,10 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start w-full max-w-full">
         
-        {/* Live2D Avatar Area (5 cols) */}
-        <div ref={avatarSectionRef} className="lg:col-span-5">
+        {/* Live2D Avatar Area (5 cols on lg, full width top on mobile) */}
+        <div ref={avatarSectionRef} className="w-full max-w-full mx-auto lg:col-span-5">
           <Live2DAvatar
             key={activeProfile.id + activeProfile.live2dModelUrl}
             onDebugLog={onDebugLog}
@@ -921,27 +941,32 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
           />
         </div>
 
-        {/* Chat Console Area (7 cols) */}
+        {/* Chat Console Area (7 cols on lg, full width bottom on mobile, stacked vertically) */}
         <div
           ref={chatContainerRef}
-          onMouseUp={handleChatResizeSave}
-          onTouchEnd={handleChatResizeSave}
+          onMouseUp={isMobile ? undefined : handleChatResizeSave}
+          onTouchEnd={isMobile ? undefined : handleChatResizeSave}
           style={{
-            transform: `translate(${chatPos.x}px, ${chatPos.y}px)`,
+            transform: isMobile ? undefined : `translate(${chatPos.x}px, ${chatPos.y}px)`,
             position: "relative",
             zIndex: isDraggingChat ? 30 : 10,
-            width: chatSize.width || undefined,
-            height: chatSize.height || undefined,
+            width: isMobile ? "100%" : (chatSize.width || undefined),
+            height: isMobile ? undefined : (chatSize.height || undefined),
+            maxWidth: "100%",
           }}
-          className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col h-[520px] resize overflow-auto min-w-[320px] min-h-[400px]"
+          className={`w-full max-w-full mx-auto lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col h-[520px] overflow-auto min-w-0 min-h-[380px] ${
+            isMobile ? "resize-none" : "lg:resize lg:min-w-[320px] lg:min-h-[400px]"
+          }`}
         >
           
           {/* Console Header */}
           <div
-            onMouseDown={handleChatHeaderMouseDown}
-            onTouchStart={handleChatHeaderTouchStart}
-            className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4 cursor-move select-none"
-            title="Drag to move conversation window"
+            onMouseDown={isMobile ? undefined : handleChatHeaderMouseDown}
+            onTouchStart={isMobile ? undefined : handleChatHeaderTouchStart}
+            className={`flex items-center justify-between border-b border-slate-800 pb-3 mb-4 select-none ${
+              isMobile ? "cursor-default" : "cursor-move"
+            }`}
+            title={isMobile ? undefined : "Drag to move conversation window"}
           >
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>

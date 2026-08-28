@@ -440,18 +440,18 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-violet-600 selection:text-white">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-violet-600 selection:text-white">
       
       {/* Top Navigation Header */}
-      <header className="h-16 bg-slate-900/80 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto h-full px-4 md:px-8 flex items-center justify-between gap-3">
+      <header className="h-16 bg-slate-900/80 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md w-full max-w-full overflow-hidden">
+        <div className="max-w-7xl mx-auto h-full px-2.5 sm:px-4 md:px-8 flex items-center justify-between gap-1.5 sm:gap-3">
           
           {/* Left: Brand Logo & Title */}
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-500/20 text-white font-bold text-xs">
+          <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-500/20 text-white font-bold text-[11px] sm:text-xs">
               PW
             </div>
-            <h1 className="text-xl font-serif italic text-slate-100 tracking-tight flex items-center">
+            <h1 className="text-base sm:text-xl font-serif italic text-slate-100 tracking-tight flex items-center truncate">
               Project Waifu
               <span className="text-[10px] font-sans not-italic text-slate-500 ml-2 uppercase tracking-widest hidden sm:inline border border-slate-800 px-1.5 py-0.5 rounded-md">
                 {appVersion}
@@ -460,8 +460,8 @@ export default function App() {
           </div>
 
             {/* Center / Right: Dedicated Status Lights Bar */}
-            <div className="flex items-center space-x-2 md:space-x-3">
-              <div className="flex items-center gap-2 bg-slate-950/70 border border-slate-800/80 px-2.5 md:px-3 py-1.5 rounded-xl text-xs font-mono shadow-inner">
+            <div className="flex items-center space-x-1.5 sm:space-x-2 md:space-x-3 flex-shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-950/70 border border-slate-800/80 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-mono shadow-inner">
                 <div className={`w-2 h-2 rounded-full ${isOpenWebUIValid ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}></div>
                 <span className="text-slate-300 hidden sm:inline">
                   API: <strong className={isOpenWebUIValid ? "text-emerald-400 font-semibold" : "text-amber-400 font-semibold"}>
@@ -801,7 +801,7 @@ export default function App() {
       )}
 
       {/* Main Body Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-4 md:p-6 space-y-4 sm:space-y-6 overflow-x-hidden">
         
         {activeTab === "chat" && (
           <ChatConsole

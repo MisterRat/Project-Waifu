@@ -127,6 +127,23 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const zoomStartRef = useRef({ y: 0, scale: 1 });
   const [zoomLevel, setZoomLevel] = useState<number>(1);
 
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth < 1024;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+    };
+  }, []);
+
   const [pos, setPos] = useState(() => {
     try {
       const saved = localStorage.getItem("waifu_avatar_pos");
@@ -150,6 +167,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   }, [pos]);
 
   const handleResizeSave = () => {
+    if (isMobile) return;
     const el = containerRef.current;
     if (el) {
       const newSize = { width: `${el.offsetWidth}px`, height: `${el.offsetHeight}px` };
@@ -325,6 +343,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const dragRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
 
   const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    if (isMobile) return;
     setIsDraggingWindow(true);
     dragRef.current = {
       startX: e.clientX,
@@ -336,6 +355,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   };
 
   const handleHeaderTouchStart = (e: React.TouchEvent) => {
+    if (isMobile) return;
     if (e.touches.length === 1) {
       const touch = e.touches[0];
       setIsDraggingWindow(true);
@@ -1790,22 +1810,27 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   return (
     <div
       ref={containerRef}
-      onMouseUp={handleResizeSave}
+      onMouseUp={isMobile ? undefined : handleResizeSave}
       style={{
-        transform: `translate(${pos.x}px, ${pos.y}px)`,
+        transform: isMobile ? undefined : `translate(${pos.x}px, ${pos.y}px)`,
         position: "relative",
         zIndex: isDraggingWindow ? 30 : 10,
-        width: size.width || undefined,
-        height: size.height || undefined,
+        width: isMobile ? "100%" : (size.width || undefined),
+        height: isMobile ? undefined : (size.height || undefined),
+        maxWidth: "100%",
       }}
-      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-2xl resize overflow-auto min-w-[300px] min-h-[400px]"
+      className={`w-full max-w-full mx-auto bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-2xl min-w-0 min-h-[380px] ${
+        isMobile ? "resize-none" : "lg:resize lg:min-w-[300px] lg:min-h-[400px]"
+      }`}
     >
       {/* Top Header Bar */}
       <div
-        onMouseDown={handleHeaderMouseDown}
-        onTouchStart={handleHeaderTouchStart}
-        className="bg-slate-950/95 border-b border-slate-800 px-4 py-3 flex items-center justify-between backdrop-blur z-10 cursor-move select-none"
-        title="Drag to move window"
+        onMouseDown={isMobile ? undefined : handleHeaderMouseDown}
+        onTouchStart={isMobile ? undefined : handleHeaderTouchStart}
+        className={`bg-slate-950/95 border-b border-slate-800 px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between backdrop-blur z-10 select-none ${
+          isMobile ? "cursor-default" : "cursor-move"
+        }`}
+        title={isMobile ? undefined : "Drag to move window"}
       >
         <div className="flex items-center gap-2">
           <span
@@ -1890,8 +1915,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
       {/* Model Selection Modal */}
       {showCustomModelModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-5 sm:p-6 max-w-md w-full mx-auto shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
                 <Settings2 className="w-5 h-5 text-violet-400" />
