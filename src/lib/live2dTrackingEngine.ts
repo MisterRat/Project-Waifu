@@ -240,17 +240,20 @@ export function applyLive2DMultiJointKinematics(
   if (!options.hasNativeExpressions) {
     setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
     setParam("ParamCheek", "PARAM_CHEEK", emotionCheek);
+    setParam("ParamCheekBlush", "PARAM_CHEEK_BLUSH", emotionCheek);
+    setParam("ParamBlush", "PARAM_BLUSH", emotionCheek);
     setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", emotionEyeLOpen);
     setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", emotionEyeROpen);
     setParam("ParamBrowLY", "PARAM_BROW_L_Y", emotionBrowLY);
     setParam("ParamBrowRY", "PARAM_BROW_R_Y", emotionBrowRY);
     setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", emotionBrowAngle);
     setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", emotionBrowAngle);
-
-    if (emotionCheek > 0) {
-      setParam("ParamCheekBlush", "PARAM_CHEEK_BLUSH", emotionCheek);
-      setParam("ParamBlush", "PARAM_BLUSH", emotionCheek);
-    }
+    setParam("ParamBrowLForm", "PARAM_BROW_L_FORM", 0);
+    setParam("ParamBrowRForm", "PARAM_BROW_R_FORM", 0);
+    setParam("ParamEyeLSmile", "PARAM_EYE_L_SMILE", 0);
+    setParam("ParamEyeRSmile", "PARAM_EYE_R_SMILE", 0);
+    setParam("ParamEyeBallForm", "PARAM_EYE_BALL_FORM", 0);
+    setParam("ParamTear", "PARAM_TEAR", 0);
   }
 
   // Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)

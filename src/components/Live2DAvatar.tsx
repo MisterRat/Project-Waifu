@@ -208,6 +208,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const activeMotionRef = useRef<MotionType>(activeMotion);
   const isSpeakingRef = useRef<boolean>(isSpeaking);
   const mouthOpenRatioRef = useRef<number>(0);
+  const activeNativeExpressionRef = useRef<string | null>(null);
 
   useEffect(() => {
     physicsIntensityRef.current = physicsIntensity ?? 1.0;
@@ -226,8 +227,80 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     if (live2dModelRef.current) {
       try {
         const model = live2dModelRef.current;
-        if (typeof (model as any).expression === "function") {
-          const exprMgr = model.internalModel?.motionManager?.expressionManager;
+        const exprMgr = model.internalModel?.motionManager?.expressionManager;
+        const core = model.internalModel?.coreModel;
+
+        if (emotion === "neutral") {
+          activeNativeExpressionRef.current = null;
+
+          // 1. Fully stop and clear active expression in expression manager
+          if (exprMgr) {
+            try {
+              exprMgr.currentExpression = null;
+              exprMgr.reserveExpressionIndex = -1;
+              if (typeof exprMgr.resetExpression === "function") {
+                exprMgr.resetExpression();
+              }
+              if (typeof exprMgr.stopAllExpressions === "function") {
+                exprMgr.stopAllExpressions();
+              }
+              if (typeof exprMgr.clear === "function") {
+                exprMgr.clear();
+              }
+            } catch (e) {}
+          }
+
+          // 2. Clear expression on model
+          try {
+            if (typeof (model as any).expression === "function") {
+              (model as any).expression(null);
+            }
+          } catch (e) {}
+
+          // 3. Immediately zero out / reset facial expression parameters to neutral baseline
+          if (core) {
+            const resetParam = (idC4: string, idC2: string, val: number) => {
+              try {
+                if (typeof core.setParameterValueById === "function") {
+                  core.setParameterValueById(idC4, val);
+                }
+                if (typeof core.setParamFloat === "function") {
+                  core.setParamFloat(idC2, val);
+                  core.setParamFloat(idC4, val);
+                }
+                if (core._model && typeof core._model.setParameterValueByIndex === "function") {
+                  const pIds = core._parameterIds;
+                  if (Array.isArray(pIds)) {
+                    const idx = pIds.indexOf(idC4) !== -1 ? pIds.indexOf(idC4) : pIds.indexOf(idC2);
+                    if (idx !== -1) core._model.setParameterValueByIndex(idx, val);
+                  }
+                }
+              } catch (e) {}
+            };
+
+            resetParam("ParamMouthForm", "PARAM_MOUTH_FORM", 0);
+            resetParam("ParamCheek", "PARAM_CHEEK", 0);
+            resetParam("ParamCheekBlush", "PARAM_CHEEK_BLUSH", 0);
+            resetParam("ParamBlush", "PARAM_BLUSH", 0);
+            resetParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", 1.0);
+            resetParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", 1.0);
+            resetParam("ParamBrowLY", "PARAM_BROW_L_Y", 0);
+            resetParam("ParamBrowRY", "PARAM_BROW_R_Y", 0);
+            resetParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", 0);
+            resetParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", 0);
+            resetParam("ParamBrowLForm", "PARAM_BROW_L_FORM", 0);
+            resetParam("ParamBrowRForm", "PARAM_BROW_R_FORM", 0);
+            resetParam("ParamEyeLSmile", "PARAM_EYE_L_SMILE", 0);
+            resetParam("ParamEyeRSmile", "PARAM_EYE_R_SMILE", 0);
+            resetParam("ParamEyeBallForm", "PARAM_EYE_BALL_FORM", 0);
+            resetParam("ParamTear", "PARAM_TEAR", 0);
+          }
+
+          logLive2DDiagnostic(
+            "expression",
+            `[Live2D Engine] Expression reset to NEUTRAL / DEFAULT. Cleared active expression curves.`
+          );
+        } else if (typeof (model as any).expression === "function") {
           const definitions = exprMgr?.definitions || exprMgr?.expressions || [];
           let matchedExpression: string | number | undefined = undefined;
           let matchedDefName: string = "";
@@ -267,6 +340,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
 
           if (matchedExpression !== undefined) {
+            activeNativeExpressionRef.current = String(matchedExpression);
             const res = (model as any).expression(matchedExpression);
             logLive2DDiagnostic(
               "model-file",
@@ -274,7 +348,14 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               { emotion, matchedExpression, matchedFile, result: res }
             );
           } else {
-            // Clear any active expression on the model so it returns to neutral base
+            activeNativeExpressionRef.current = null;
+            // Clear any active expression on the model so it returns to procedural base
+            if (exprMgr) {
+              try {
+                exprMgr.currentExpression = null;
+                exprMgr.reserveExpressionIndex = -1;
+              } catch (e) {}
+            }
             try {
               if (typeof (model as any).expression === "function") {
                 (model as any).expression(null);
@@ -1356,10 +1437,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
 
           // 4. Inject multi-joint angle coupling and physics jiggle
-          const hasNativeExprs = Boolean(
-            currentModel.internalModel?.motionManager?.expressionManager?.definitions?.length ||
-            currentModel.internalModel?.motionManager?.expressionManager?.expressions?.length
-          );
+          const hasNativeExprs = Boolean(activeNativeExpressionRef.current);
 
           applyLive2DMultiJointKinematics(
             core,

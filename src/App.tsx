@@ -443,15 +443,15 @@ export default function App() {
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-violet-600 selection:text-white">
       
       {/* Top Navigation Header */}
-      <header className="h-16 bg-slate-900/80 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md w-full max-w-full overflow-hidden">
-        <div className="max-w-7xl mx-auto h-full px-2.5 sm:px-4 md:px-8 flex items-center justify-between gap-1.5 sm:gap-3">
+      <header className="h-14 sm:h-16 bg-slate-900/80 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md w-full max-w-full overflow-hidden">
+        <div className="max-w-7xl mx-auto h-full px-2 sm:px-4 md:px-8 flex items-center justify-between gap-1 sm:gap-3">
           
           {/* Left: Brand Logo & Title */}
-          <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-500/20 text-white font-bold text-[11px] sm:text-xs">
+          <div className="flex items-center space-x-1.5 sm:space-x-3 flex-shrink-0 min-w-0">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-500/20 text-white font-bold text-[11px] sm:text-xs flex-shrink-0">
               PW
             </div>
-            <h1 className="text-base sm:text-xl font-serif italic text-slate-100 tracking-tight flex items-center truncate">
+            <h1 className="text-sm sm:text-xl font-serif italic text-slate-100 tracking-tight flex items-center truncate">
               Project Waifu
               <span className="text-[10px] font-sans not-italic text-slate-500 ml-2 uppercase tracking-widest hidden sm:inline border border-slate-800 px-1.5 py-0.5 rounded-md">
                 {appVersion}
@@ -460,15 +460,15 @@ export default function App() {
           </div>
 
             {/* Center / Right: Dedicated Status Lights Bar */}
-            <div className="flex items-center space-x-1.5 sm:space-x-2 md:space-x-3 flex-shrink-0">
-              <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-950/70 border border-slate-800/80 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-mono shadow-inner">
-                <div className={`w-2 h-2 rounded-full ${isOpenWebUIValid ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}></div>
+            <div className="flex items-center space-x-1 sm:space-x-2 md:space-x-3 flex-shrink-0">
+              <div className="flex items-center gap-1 sm:gap-2 bg-slate-950/70 border border-slate-800/80 px-1.5 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-mono shadow-inner">
+                <div className={`w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full flex-shrink-0 ${isOpenWebUIValid ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}></div>
                 <span className="text-slate-300 hidden sm:inline">
                   API: <strong className={isOpenWebUIValid ? "text-emerald-400 font-semibold" : "text-amber-400 font-semibold"}>
                     {isOpenWebUIValid ? `OPENAI (${openWebUIConfig.model})` : "GEMINI DIRECT"}
                   </strong>
                 </span>
-                <span className="text-slate-300 sm:hidden">
+                <span className="text-slate-300 sm:hidden font-semibold text-[10px]">
                   {isOpenWebUIValid ? "OPENAI" : "GEMINI"}
                 </span>
               </div>
@@ -523,10 +523,10 @@ export default function App() {
               {/* TTS Status Button */}
               <button
                 onClick={toggleTTS}
-                className="flex items-center gap-2 bg-slate-950/70 hover:bg-slate-900 border border-slate-800/80 hover:border-violet-500/40 px-2.5 md:px-3 py-1.5 rounded-xl text-xs font-mono shadow-inner transition cursor-pointer"
+                className="flex items-center gap-1 sm:gap-2 bg-slate-950/70 hover:bg-slate-900 border border-slate-800/80 hover:border-violet-500/40 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-mono shadow-inner transition cursor-pointer"
                 title={isTTSEnabled ? "Text-To-Speech (TTS) is ON. Click to toggle OFF." : "Text-To-Speech (TTS) is OFF. Click to toggle ON."}
               >
-                <div className={`w-2 h-2 rounded-full ${isTTSEnabled ? "bg-violet-500 animate-pulse" : "bg-slate-600"}`}></div>
+                <div className={`w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full flex-shrink-0 ${isTTSEnabled ? "bg-violet-500 animate-pulse" : "bg-slate-600"}`}></div>
                 <span className="text-slate-300">
                   TTS: <strong className={isTTSEnabled ? "text-violet-400 font-semibold" : "text-slate-500 font-semibold"}>
                     {isTTSEnabled ? "ON" : "OFF"}
@@ -537,11 +537,11 @@ export default function App() {
               {/* Account / User Sync Button */}
               <button
                 onClick={() => setIsAuthModalOpen(true)}
-                className="flex items-center gap-1.5 bg-slate-950/70 hover:bg-slate-900 border border-slate-800/80 hover:border-pink-500/40 px-2.5 md:px-3 py-1.5 rounded-xl text-xs font-mono shadow-inner transition cursor-pointer"
+                className="flex items-center gap-1 sm:gap-1.5 bg-slate-950/70 hover:bg-slate-900 border border-slate-800/80 hover:border-pink-500/40 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-mono shadow-inner transition cursor-pointer max-w-[90px] sm:max-w-none truncate"
                 title={currentUser ? `Logged in as ${currentUser.email}` : "Sign in to sync profiles & settings server-side"}
               >
-                <div className={`w-2 h-2 rounded-full ${currentUser ? "bg-pink-500" : "bg-slate-600"}`}></div>
-                <span className="text-slate-300">
+                <div className={`w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full flex-shrink-0 ${currentUser ? "bg-pink-500" : "bg-slate-600"}`}></div>
+                <span className="text-slate-300 truncate">
                   {currentUser ? (
                     <strong className="text-pink-300 font-semibold">{currentUser.email.split("@")[0]}</strong>
                   ) : (
@@ -554,10 +554,10 @@ export default function App() {
               {currentUser?.role === "admin" && (
                 <button
                   onClick={() => setIsAdminModalOpen(true)}
-                  className="flex items-center gap-1.5 bg-violet-950/60 hover:bg-violet-900 border border-violet-800/80 text-violet-200 px-2.5 md:px-3 py-1.5 rounded-xl text-xs font-mono shadow-inner transition cursor-pointer"
+                  className="flex items-center gap-1 sm:gap-1.5 bg-violet-950/60 hover:bg-violet-900 border border-violet-800/80 text-violet-200 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-mono shadow-inner transition cursor-pointer"
                   title="Open Admin & User Approvals Panel"
                 >
-                  <Shield className="w-3.5 h-3.5 text-violet-400" />
+                  <Shield className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-violet-400" />
                   <span className="font-semibold hidden sm:inline">Admin</span>
                 </button>
               )}
@@ -566,10 +566,10 @@ export default function App() {
               {currentUser?.role === "admin" && (
                 <button
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
-                  className="bg-slate-800/90 hover:bg-slate-700 text-slate-100 p-2.5 rounded-2xl border border-slate-700/80 flex items-center gap-2 transition shadow-lg shadow-black/20 group cursor-pointer"
+                  className="bg-slate-800/90 hover:bg-slate-700 text-slate-100 p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl border border-slate-700/80 flex items-center gap-1.5 sm:gap-2 transition shadow-lg shadow-black/20 group cursor-pointer"
                   title="Toggle settings & menu"
                 >
-                  {isMenuOpen ? <X className="w-5 h-5 text-violet-400" /> : <Menu className="w-5 h-5 text-violet-400 group-hover:scale-110 transition-transform" />}
+                  {isMenuOpen ? <X className="w-4 sm:w-5 h-4 sm:h-5 text-violet-400" /> : <Menu className="w-4 sm:w-5 h-4 sm:h-5 text-violet-400 group-hover:scale-110 transition-transform" />}
                   <span className="text-xs font-medium pr-1 hidden lg:inline">
                     {activeTab === "chat" && "Live Companion"}
                     {activeTab === "persona" && "Edit Persona"}
@@ -926,17 +926,17 @@ export default function App() {
       />
 
       {/* Bottom Status Bar / Footer */}
-      <footer className="h-8 bg-slate-900/80 border-t border-slate-800 flex items-center px-6 justify-between text-[10px] text-slate-500 font-mono">
-        <div className="flex items-center space-x-4">
+      <footer className="h-8 bg-slate-900/80 border-t border-slate-800 flex items-center px-3 sm:px-6 justify-between text-[10px] text-slate-500 font-mono w-full max-w-full overflow-hidden">
+        <div className="hidden md:flex items-center space-x-4">
           <span>PID: 12480</span>
           <span>LATENCY: 42ms</span>
         </div>
-        <div className="flex items-center space-x-3 text-[11px] font-mono">
-          <span className="text-slate-400 font-semibold">EXPRESSION: <span className="text-violet-300 font-bold uppercase">[{currentEmotion}]</span></span>
+        <div className="flex items-center space-x-2 sm:space-x-3 text-[10px] sm:text-[11px] font-mono mx-auto md:mx-0 truncate">
+          <span className="text-slate-400 font-semibold truncate">EXPR: <span className="text-violet-300 font-bold uppercase">[{currentEmotion}]</span></span>
           <span className="text-slate-600">|</span>
-          <span className="text-slate-400 font-semibold">MOTION: <span className={currentMotion !== "none" ? "text-emerald-400 font-bold uppercase animate-pulse" : "text-slate-400 uppercase"}>[{currentMotion}]</span></span>
+          <span className="text-slate-400 font-semibold truncate">MOTION: <span className={currentMotion !== "none" ? "text-emerald-400 font-bold uppercase animate-pulse" : "text-slate-400 uppercase"}>[{currentMotion}]</span></span>
         </div>
-        <div>FastAPI • Live2D • OpenWebUI</div>
+        <div className="hidden sm:inline">FastAPI • Live2D • OpenWebUI</div>
       </footer>
 
     </div>

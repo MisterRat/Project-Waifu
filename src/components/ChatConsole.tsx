@@ -871,11 +871,11 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
     <div className="space-y-4 w-full max-w-full overflow-hidden">
       
       {/* Top Waifu Quick Selector & Persona Manager Bar */}
-      <div className="bg-slate-900 border border-slate-800 p-3 sm:p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 shadow-lg w-full max-w-full overflow-hidden">
-        <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-full">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5 mr-1 flex-shrink-0">
+      <div className="bg-slate-900 border border-slate-800 p-2.5 sm:p-3.5 rounded-2xl flex items-center justify-between gap-2 shadow-lg w-full max-w-full overflow-hidden">
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-0.5 max-w-full no-scrollbar">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5 mr-1 flex-shrink-0">
             <Heart className="w-3.5 h-3.5 text-violet-400 fill-violet-400/20" />
-            <span>Active Persona:</span>
+            <span className="hidden xs:inline sm:inline">Active Persona:</span>
           </span>
 
           {profiles.map((p) => {
@@ -884,7 +884,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
               <button
                 key={p.id}
                 onClick={() => handleSwitchWaifu(p.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition whitespace-nowrap border flex-shrink-0 ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition whitespace-nowrap border flex-shrink-0 ${
                   isActive
                     ? "bg-violet-600 text-white border-violet-500 shadow-lg shadow-violet-500/20"
                     : "bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-800"
@@ -954,7 +954,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
             height: isMobile ? undefined : (chatSize.height || undefined),
             maxWidth: "100%",
           }}
-          className={`w-full max-w-full mx-auto lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col h-[520px] overflow-auto min-w-0 min-h-[380px] ${
+          className={`w-full max-w-full mx-auto lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-5 shadow-xl flex flex-col h-[520px] overflow-auto min-w-0 min-h-[380px] ${
             isMobile ? "resize-none" : "lg:resize lg:min-w-[320px] lg:min-h-[400px]"
           }`}
         >
@@ -963,41 +963,41 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
           <div
             onMouseDown={isMobile ? undefined : handleChatHeaderMouseDown}
             onTouchStart={isMobile ? undefined : handleChatHeaderTouchStart}
-            className={`flex items-center justify-between border-b border-slate-800 pb-3 mb-4 select-none ${
+            className={`flex items-center justify-between border-b border-slate-800 pb-2.5 sm:pb-3 mb-3 sm:mb-4 select-none ${
               isMobile ? "cursor-default" : "cursor-move"
             }`}
             title={isMobile ? undefined : "Drag to move conversation window"}
           >
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <h3 className="font-bold text-sm text-slate-100 font-serif italic">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
+              <h3 className="font-bold text-xs sm:text-sm text-slate-100 font-serif italic truncate">
                 {activeProfile.name}'s Conversation Thread
               </h3>
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-slate-400">
+            <div className="flex items-center gap-2 text-xs text-slate-400 flex-shrink-0">
               <button
                 onClick={handleClearHistory}
-                className="p-1.5 px-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-800/60 transition flex items-center gap-1.5 text-xs font-medium"
+                className="p-1 sm:p-1.5 px-2 sm:px-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-800/60 transition flex items-center gap-1.5 text-[11px] sm:text-xs font-medium"
                 title={`Clear chat history for ${activeProfile.name}`}
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Clear Chat</span>
+                <Trash2 className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
+                <span className="hidden xs:inline">Clear Chat</span>
               </button>
             </div>
           </div>
 
           {/* Messages History */}
-          <div className="flex-1 overflow-y-auto space-y-3 pr-2 text-xs font-sans">
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1 sm:pr-2 text-xs font-sans">
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex gap-3 max-w-[85%] ${
+                className={`flex gap-2 sm:gap-3 max-w-[92%] sm:max-w-[85%] ${
                   msg.sender === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
                 }`}
               >
                 <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${
+                  className={`w-6 sm:w-7 h-6 sm:h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${
                     msg.sender === "user"
                       ? "bg-slate-800 text-slate-300 border border-slate-700"
                       : msg.sender === "waifu"
@@ -1005,11 +1005,11 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
                       : "bg-amber-600 text-white"
                   }`}
                 >
-                  {msg.sender === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                  {msg.sender === "user" ? <User className="w-3.5 sm:w-4 h-3.5 sm:h-4" /> : <Bot className="w-3.5 sm:w-4 h-3.5 sm:h-4" />}
                 </div>
 
                 <div
-                  className={`p-3.5 rounded-2xl leading-relaxed text-sm ${
+                  className={`p-2.5 sm:p-3.5 rounded-2xl leading-relaxed text-xs sm:text-sm ${
                     msg.sender === "user"
                       ? "bg-violet-600/10 border border-violet-500/30 text-violet-100 rounded-br-none"
                       : msg.sender === "waifu"
@@ -1017,18 +1017,18 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
                       : "bg-amber-950/40 border border-amber-800/40 text-amber-200"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-3 mb-1">
-                    <span className="font-bold text-xs opacity-90">
+                  <div className="flex items-center justify-between gap-2 sm:gap-3 mb-1">
+                    <span className="font-bold text-[11px] sm:text-xs opacity-90">
                       {msg.sender === "user" ? "You" : msg.sender === "waifu" ? activeProfile.name : "System"}
                     </span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
                       {msg.emotion && (
-                        <span className="text-[10px] bg-violet-500/20 border border-violet-500/30 px-2 py-0.5 rounded text-violet-300 font-mono uppercase tracking-wider">
+                        <span className="text-[9px] sm:text-[10px] bg-violet-500/20 border border-violet-500/30 px-1.5 sm:px-2 py-0.5 rounded text-violet-300 font-mono uppercase tracking-wider">
                           [{msg.emotion}]
                         </span>
                       )}
                       {msg.motion && msg.motion !== "none" && (
-                        <span className="text-[10px] bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 rounded text-emerald-300 font-mono uppercase tracking-wider">
+                        <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 border border-emerald-500/30 px-1.5 sm:px-2 py-0.5 rounded text-emerald-300 font-mono uppercase tracking-wider">
                           [{msg.motion}]
                         </span>
                       )}
@@ -1056,13 +1056,13 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
               e.preventDefault();
               handleSendMessage();
             }}
-            className="mt-4 pt-3 border-t border-slate-800 flex items-center gap-2"
+            className="mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t border-slate-800 flex items-center gap-1.5 sm:gap-2 w-full max-w-full"
           >
             <button
               type="button"
               onClick={toggleListening}
               disabled={isTranscribing}
-              className={`p-3 rounded-full transition border ${
+              className={`p-2.5 sm:p-3 rounded-full transition border flex-shrink-0 ${
                 isTranscribing
                   ? "bg-violet-950 text-violet-300 border-violet-500/50"
                   : isListening
@@ -1091,16 +1091,16 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={`Enter command or talk to ${activeProfile.name}...`}
-              className="flex-1 bg-slate-900 border border-slate-800 rounded-full py-3 px-5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition"
+              className="flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-full py-2.5 sm:py-3 px-3.5 sm:px-5 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition"
             />
 
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="bg-violet-600 hover:bg-violet-500 text-white font-medium px-5 py-3 rounded-full text-xs flex items-center gap-1.5 transition disabled:opacity-50 shadow-lg shadow-violet-500/20"
+              className="bg-violet-600 hover:bg-violet-500 text-white font-medium px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-full text-xs flex items-center gap-1.5 transition disabled:opacity-50 shadow-lg shadow-violet-500/20 flex-shrink-0"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Send</span>
+              <span className="hidden xs:inline">Send</span>
             </button>
           </form>
 
