@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c3aed" />
+      <stop offset="50%" stop-color="#9333ea" />
+      <stop offset="100%" stop-color="#c026d3" />
+    </linearGradient>
+    <radialGradient id="glowGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e879f9" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0" />
+    </radialGradient>
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <!-- Background Dark Rounded Square -->
+  <rect width="512" height="512" rx="110" fill="#020617" />
+  
+  <!-- Outer Glow Ring -->
+  <circle cx="256" cy="256" r="220" fill="url(#glowGrad)" />
+  <circle cx="256" cy="256" r="190" fill="url(#bgGrad)" stroke="#c084fc" stroke-width="6" filter="url(#dropShadow)" />
+
+  <!-- Stylized PW Logo Monogram & Heart Spark -->
+  <g fill="#ffffff" filter="url(#dropShadow)">
+    <!-- Stylized Heart Center -->
+    <path d="M256 160 C230 120 170 120 150 160 C130 200 170 250 256 320 C342 250 382 200 362 160 C342 120 282 120 256 160 Z" fill="#ffffff" opacity="0.95" />
+    <!-- Center Sparkle Accent -->
+    <path d="M256 200 L262 215 L277 221 L262 227 L256 242 L250 227 L235 221 L250 215 Z" fill="#c026d3" />
+  </g>
+
+  <!-- PW Monogram Text Overlay -->
+  <text x="256" y="400" font-family="system-ui, -apple-system, sans-serif" font-size="54" font-weight="900" font-style="italic" fill="#f8fafc" text-anchor="middle" letter-spacing="4">PROJECT WAIFU</text>
+</svg>
