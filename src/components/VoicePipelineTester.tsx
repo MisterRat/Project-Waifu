@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { TTSConfig, STTConfig } from "../types";
 import { Mic, MicOff, Volume2, Play, Radio, Loader2, Save, Check } from "lucide-react";
 import { fetchOpenAITTSAudioBlob } from "../lib/openaiTts";
+import { lipSyncEngine } from "../lib/lipSyncEngine";
 
 interface VoicePipelineTesterProps {
   ttsConfig: TTSConfig;
@@ -279,7 +280,6 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
 
     if (ttsConfig.provider === "openai") {
       setIsSynthesizing(true);
-      if (onAudioVolumeChange) onAudioVolumeChange(0.2);
 
       const cleanText = testSpeechText.replace(
         /^\[(angry|confused|crying|embarrassed|evil|excited|flirty|happy|sad|scared|smirk|surprised|thinking|tipsy|tired|blush|neutral)\]\s*/i,
@@ -299,14 +299,14 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
         const audioUrl = URL.createObjectURL(blob);
         const audio = new Audio(audioUrl);
 
-        let audioCtx: AudioContext | null = null;
-        let animFrameId: number;
+        let detachLipSync: (() => void) | null = null;
 
         const cleanup = () => {
-          cancelAnimationFrame(animFrameId);
-          if (audioCtx && audioCtx.state !== "closed") {
-            audioCtx.close().catch(() => {});
+          if (detachLipSync) {
+            detachLipSync();
+            detachLipSync = null;
           }
+          lipSyncEngine.stop();
           if (onAudioVolumeChange) onAudioVolumeChange(0);
           URL.revokeObjectURL(audioUrl);
           setIsSynthesizing(false);
@@ -314,39 +314,7 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
 
         audio.onplay = () => {
           onStartSpeech(testSpeechText);
-          try {
-            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-            if (AudioContextClass) {
-              audioCtx = new AudioContextClass();
-              const source = audioCtx.createMediaElementSource(audio);
-              const analyser = audioCtx.createAnalyser();
-              analyser.fftSize = 256;
-              source.connect(analyser);
-              analyser.connect(audioCtx.destination);
-
-              const bufferLength = analyser.frequencyBinCount;
-              const dataArray = new Uint8Array(bufferLength);
-
-              const updateVolume = () => {
-                if (audio.paused || audio.ended) return;
-                analyser.getByteFrequencyData(dataArray);
-                let sum = 0;
-                for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
-                const avg = sum / bufferLength;
-                if (onAudioVolumeChange) onAudioVolumeChange(Math.min(1, avg / 100));
-                animFrameId = requestAnimationFrame(updateVolume);
-              };
-              updateVolume();
-            }
-          } catch (e) {
-            let simInterval = setInterval(() => {
-              if (audio.paused || audio.ended) {
-                clearInterval(simInterval);
-                return;
-              }
-              if (onAudioVolumeChange) onAudioVolumeChange(Math.random() * 0.7 + 0.3);
-            }, 90);
-          }
+          detachLipSync = lipSyncEngine.attachAudioElement(audio);
         };
 
         audio.onended = cleanup;
@@ -359,6 +327,7 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
         await audio.play();
       } catch (err: any) {
         console.error("OpenAI TTS error:", err);
+        lipSyncEngine.stop();
         setIsSynthesizing(false);
         if (onAudioVolumeChange) onAudioVolumeChange(0);
         alert(`Failed to generate TTS audio: ${err.message || err}`);
@@ -385,17 +354,28 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
       if (voiceObj) utterance.voice = voiceObj;
     }
 
-    let intervalId: any;
+    let detachUtterance: (() => void) | null = null;
     utterance.onstart = () => {
       onStartSpeech(testSpeechText);
-      intervalId = setInterval(() => {
-        const fakeVol = Math.random() * 0.8 + 0.2;
-        if (onAudioVolumeChange) onAudioVolumeChange(fakeVol);
-      }, 100);
+      detachUtterance = lipSyncEngine.startSpeechUtterance();
     };
 
     utterance.onend = () => {
-      clearInterval(intervalId);
+      if (detachUtterance) {
+        detachUtterance();
+        detachUtterance = null;
+      }
+      lipSyncEngine.stop();
+      if (onAudioVolumeChange) onAudioVolumeChange(0);
+      setIsSynthesizing(false);
+    };
+
+    utterance.onerror = () => {
+      if (detachUtterance) {
+        detachUtterance();
+        detachUtterance = null;
+      }
+      lipSyncEngine.stop();
       if (onAudioVolumeChange) onAudioVolumeChange(0);
       setIsSynthesizing(false);
     };

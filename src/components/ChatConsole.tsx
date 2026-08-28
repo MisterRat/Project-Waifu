@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ChatMessage, EmotionType, MotionType, OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile } from "../types";
 import { fetchOpenAITTSAudioBlob } from "../lib/openaiTts";
+import { lipSyncEngine } from "../lib/lipSyncEngine";
 import { parseEmotionAndMotionTags } from "../lib/tagParser";
 import { Live2DAvatar } from "./Live2DAvatar";
 import { PersonaEditorModal } from "./PersonaEditorModal";
@@ -611,7 +612,6 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
 
     if (ttsConfig.provider === "openai") {
       setIsSpeaking(true);
-      setAudioVolume(0.2);
       scrollToAvatarOnSpeak();
 
       try {
@@ -627,71 +627,21 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         const audioUrl = URL.createObjectURL(blob);
         const audio = new Audio(audioUrl);
 
-        let audioCtx: AudioContext | null = null;
-        let animFrameId: number;
+        let detachLipSync: (() => void) | null = null;
 
         const cleanup = () => {
-          cancelAnimationFrame(animFrameId);
-          if (audioCtx && audioCtx.state !== "closed") {
-            audioCtx.close().catch(() => {});
+          if (detachLipSync) {
+            detachLipSync();
+            detachLipSync = null;
           }
+          lipSyncEngine.stop();
           setAudioVolume(0);
           setIsSpeaking(false);
           URL.revokeObjectURL(audioUrl);
         };
 
         audio.onplay = () => {
-          try {
-            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-            if (AudioContextClass) {
-              audioCtx = new AudioContextClass();
-              if (audioCtx.state === "suspended") {
-                audioCtx.resume().catch(() => {});
-              }
-
-              const source = audioCtx.createMediaElementSource(audio);
-              const analyser = audioCtx.createAnalyser();
-              analyser.fftSize = 256;
-              analyser.smoothingTimeConstant = 0.5; // Smooth mouth transitions
-              source.connect(analyser);
-              analyser.connect(audioCtx.destination);
-
-              const bufferLength = analyser.frequencyBinCount;
-              const dataArray = new Uint8Array(bufferLength);
-
-              const updateVolume = () => {
-                if (audio.paused || audio.ended) return;
-                analyser.getByteFrequencyData(dataArray);
-
-                // Analyze human voice frequency spectrum (~150Hz to 4000Hz, approx. bins 1 to 25)
-                let sum = 0;
-                const minBin = 1;
-                const maxBin = Math.min(25, bufferLength);
-                const binCount = maxBin - minBin;
-
-                for (let i = minBin; i < maxBin; i++) {
-                  sum += dataArray[i];
-                }
-
-                const avg = binCount > 0 ? sum / binCount : 0;
-                // Scale average volume (0-255) to 0.0-1.0 normalized mouth parameter value
-                const normalizedVol = Math.min(1.0, Math.max(0, (avg - 15) / 120));
-                setAudioVolume(normalizedVol);
-
-                animFrameId = requestAnimationFrame(updateVolume);
-              };
-              updateVolume();
-            }
-          } catch (e) {
-            console.warn("Web Audio API Analyser fallback to random rhythm:", e);
-            let simInterval = setInterval(() => {
-              if (audio.paused || audio.ended) {
-                clearInterval(simInterval);
-                return;
-              }
-              setAudioVolume(Math.random() * 0.7 + 0.3);
-            }, 90);
-          }
+          detachLipSync = lipSyncEngine.attachAudioElement(audio);
         };
 
         audio.onended = cleanup;
@@ -703,6 +653,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         await audio.play();
       } catch (err: any) {
         console.error("Waifu OpenAI TTS error:", err);
+        lipSyncEngine.stop();
         setAudioVolume(0);
         setIsSpeaking(false);
       }
@@ -728,15 +679,27 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
       if (selected) utterance.voice = selected;
     }
 
-    let volInterval: any;
+    let detachUtterance: (() => void) | null = null;
     utterance.onstart = () => {
-      volInterval = setInterval(() => {
-        setAudioVolume(Math.random() * 0.8 + 0.2);
-      }, 90);
+      detachUtterance = lipSyncEngine.startSpeechUtterance();
     };
 
     utterance.onend = () => {
-      clearInterval(volInterval);
+      if (detachUtterance) {
+        detachUtterance();
+        detachUtterance = null;
+      }
+      lipSyncEngine.stop();
+      setAudioVolume(0);
+      setIsSpeaking(false);
+    };
+
+    utterance.onerror = () => {
+      if (detachUtterance) {
+        detachUtterance();
+        detachUtterance = null;
+      }
+      lipSyncEngine.stop();
       setAudioVolume(0);
       setIsSpeaking(false);
     };

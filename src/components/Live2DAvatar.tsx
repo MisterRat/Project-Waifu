@@ -8,6 +8,7 @@ import {
   TrackingState,
 } from "../lib/live2dTrackingEngine";
 import { logLive2DDiagnostic } from "../lib/live2dDiagnosticLogger";
+import { lipSyncEngine } from "../lib/lipSyncEngine";
 import {
   Sparkles,
   Heart,
@@ -661,27 +662,14 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     }
   };
 
-  // Lip-Sync Animation Driver
+  // High-Precision Lip-Sync Volume Bridge
   useEffect(() => {
-    let animId: number;
-    if (isSpeaking) {
-      let phase = 0;
-      const animateLipSync = () => {
-        phase += 0.25;
-        const dynamicMouth =
-          audioVolume > 0.05
-            ? Math.min(1.0, audioVolume * 2.5)
-            : Math.abs(Math.sin(phase) * 0.75 + Math.cos(phase * 1.7) * 0.25);
-
-        setMouthOpenRatio(dynamicMouth);
-        animId = requestAnimationFrame(animateLipSync);
-      };
-      animId = requestAnimationFrame(animateLipSync);
-    } else {
-      setMouthOpenRatio(0);
+    if (audioVolume > 0) {
+      mouthOpenRatioRef.current = Math.min(1.0, audioVolume * 1.5);
+    } else if (!isSpeaking) {
+      mouthOpenRatioRef.current = 0;
     }
-    return () => cancelAnimationFrame(animId);
-  }, [isSpeaking, audioVolume]);
+  }, [audioVolume, isSpeaking]);
 
   // Silent Extended Idle Animation Driver (disabled to prevent unrequested autonomous gestures)
   useEffect(() => {
@@ -1438,6 +1426,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
           // 4. Inject multi-joint angle coupling and physics jiggle
           const hasNativeExprs = Boolean(activeNativeExpressionRef.current);
+          const lipSync = lipSyncEngine.update(dt);
+          const activeSpeaking = isSpeakingRef.current || lipSync.isSpeaking;
+          const currentMouthOpen = activeSpeaking
+            ? Math.max(lipSync.mouthOpenY, mouthOpenRatioRef.current)
+            : 0;
 
           applyLive2DMultiJointKinematics(
             core,
@@ -1461,8 +1454,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               motionAngleZ,
               motionBodyAngleZ,
               motionMouthOpen,
-              mouthOpenRatio: mouthOpenRatioRef.current,
-              isSpeaking: isSpeakingRef.current,
+              mouthOpenRatio: currentMouthOpen,
+              mouthFormRatio: lipSync.mouthForm,
+              isSpeaking: activeSpeaking,
             },
             performance.now()
           );

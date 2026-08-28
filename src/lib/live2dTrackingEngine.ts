@@ -50,6 +50,7 @@ export interface ParameterUpdateOptions {
   motionBodyAngleZ?: number;
   motionMouthOpen?: number;
   mouthOpenRatio?: number;
+  mouthFormRatio?: number;
   isSpeaking?: boolean;
 }
 
@@ -236,9 +237,50 @@ export function applyLive2DMultiJointKinematics(
   const finalMouthOpen = Math.max(mouthOpenRatio, motionMouthOpen);
   setParam("ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y", finalMouthOpen);
 
+  // Dynamic Formant & Vowel Shape Modulation (for realistic speech articulation)
+  const mouthFormRatio = options.mouthFormRatio ?? 0;
+  if (isSpeaking || finalMouthOpen > 0.05) {
+    // When speaking, blend the baseline emotion mouth form with the real-time audio formant width/roundness
+    const blendedMouthForm = Math.max(-1.0, Math.min(1.0, emotionMouthForm * 0.4 + mouthFormRatio * 0.85));
+    setParam("ParamMouthForm", "PARAM_MOUTH_FORM", blendedMouthForm);
+
+    // Map formant energies to individual vowel parameters if the model defines them
+    if (mouthFormRatio > 0.3) {
+      // Wide vowels: 'I' / 'E'
+      setParam("ParamMouthI", "PARAM_MOUTH_I", finalMouthOpen * 0.8);
+      setParam("ParamMouthE", "PARAM_MOUTH_E", finalMouthOpen * 0.7);
+      setParam("ParamMouthA", "PARAM_MOUTH_A", finalMouthOpen * 0.3);
+      setParam("ParamMouthO", "PARAM_MOUTH_O", 0);
+      setParam("ParamMouthU", "PARAM_MOUTH_U", 0);
+    } else if (mouthFormRatio < -0.3) {
+      // Rounded vowels: 'U' / 'O'
+      setParam("ParamMouthO", "PARAM_MOUTH_O", finalMouthOpen * 0.85);
+      setParam("ParamMouthU", "PARAM_MOUTH_U", finalMouthOpen * 0.75);
+      setParam("ParamMouthA", "PARAM_MOUTH_A", 0);
+      setParam("ParamMouthI", "PARAM_MOUTH_I", 0);
+      setParam("ParamMouthE", "PARAM_MOUTH_E", 0);
+    } else {
+      // Open neutral vowel: 'A'
+      setParam("ParamMouthA", "PARAM_MOUTH_A", finalMouthOpen * 0.9);
+      setParam("ParamMouthI", "PARAM_MOUTH_I", 0);
+      setParam("ParamMouthU", "PARAM_MOUTH_U", 0);
+      setParam("ParamMouthE", "PARAM_MOUTH_E", 0);
+      setParam("ParamMouthO", "PARAM_MOUTH_O", 0);
+    }
+  } else if (!options.hasNativeExpressions) {
+    setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
+    setParam("ParamMouthA", "PARAM_MOUTH_A", 0);
+    setParam("ParamMouthI", "PARAM_MOUTH_I", 0);
+    setParam("ParamMouthU", "PARAM_MOUTH_U", 0);
+    setParam("ParamMouthE", "PARAM_MOUTH_E", 0);
+    setParam("ParamMouthO", "PARAM_MOUTH_O", 0);
+  }
+
   // If the model does not have native .exp3.json expression files, apply synthetic procedural emotion curves
   if (!options.hasNativeExpressions) {
-    setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
+    if (!isSpeaking && finalMouthOpen <= 0.05) {
+      setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
+    }
     setParam("ParamCheek", "PARAM_CHEEK", emotionCheek);
     setParam("ParamCheekBlush", "PARAM_CHEEK_BLUSH", emotionCheek);
     setParam("ParamBlush", "PARAM_BLUSH", emotionCheek);
