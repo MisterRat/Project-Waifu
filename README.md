@@ -1,6 +1,6 @@
 # 🎭 Project Waifu (Live2D AI Companion Console)
 
-An interactive, customizable Web-based AI Companion application featuring **Live2D animated avatars** with automatic horizontal centering on resize/move, **real-time chat with LLMs** (OpenAI compatible / Gemini), **TTS voice synthesis and STT**, full **Persona & Model customization**, and **secure SQLite server-side authentication & settings sync**.
+An interactive, customizable Web-based AI Companion application featuring **Live2D animated avatars** with automatic horizontal centering on resize/move, **real-time chat with LLMs** (OpenAI-compatible endpoints like OpenWebUI, Ollama, LM Studio, vLLM, OpenAI), **TTS voice synthesis and STT**, full **Persona & Model customization**, and **secure SQLite server-side authentication & settings sync**.
 
 ---
 
@@ -102,9 +102,9 @@ docker compose up -d --build
 - **Upload Live2D Models**: Upload custom `.zip` files containing Live2D `model3.json` avatar packages to give your companion a unique look.
 - **Custom System Prompts**: Tailor character personalities, backstories, tone, and greetings in the Persona Editor.
 
-### 4. 🔗 Connecting External LLMs (OpenWebUI / Ollama / Gemini)
-- Open the **OpenWebUI Setup / Voice Tester** tabs in the top navigation bar.
-- Enter your local or remote OpenWebUI server endpoint address and select your desired model.
+### 4. 🔗 Connecting External LLMs (OpenWebUI / Ollama / OpenAI)
+- Open the **OpenWebUI Setup / Voice Tester** in the application.
+- Enter your OpenAI-compatible endpoint URL (e.g. OpenWebUI, Ollama, LM Studio, vLLM, OpenAI), Model name, and API Key.
 - Test endpoint health and verify stream response capabilities with built-in diagnostic tools.
 
 ---
@@ -125,6 +125,5 @@ This project utilizes and builds upon the following open-source modules, librari
 - **[Transformers.js (@xenova/transformers)](https://github.com/xenova/transformers.js)** (Apache-2.0 License) - In-browser machine learning and NLP framework by Hugging Face.
 - **[Lucide React](https://lucide.dev/)** (ISC License) - UI icon set for React applications.
 - **[Express.js](https://expressjs.com/)** (MIT License) - Server-side backend web framework for Node.js.
-- **[Google Gen AI SDK (@google/genai)](https://github.com/google-genai/google-genai-js)** (Apache-2.0 License) - Official client library for Google Gemini models.
 - **[Tailwind CSS](https://tailwindcss.com/) & [Motion](https://motion.dev/)** (MIT License) - Utility-first CSS framework and fluid layout animation library.
 
