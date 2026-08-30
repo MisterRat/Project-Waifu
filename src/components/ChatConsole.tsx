@@ -78,6 +78,14 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
     getWaifuChatHistory(activeProfile.id, activeProfile.greetingMessage)
   );
 
+  const prevActiveProfileIdRef = useRef(activeProfile.id);
+  useEffect(() => {
+    if (prevActiveProfileIdRef.current !== activeProfile.id) {
+      prevActiveProfileIdRef.current = activeProfile.id;
+      setMessages(getWaifuChatHistory(activeProfile.id, activeProfile.greetingMessage));
+    }
+  }, [activeProfile.id, activeProfile.greetingMessage]);
+
   const [input, setInput] = useState("");
   const [currentEmotion, setCurrentEmotion] = useState<EmotionType>(propsEmotion || "neutral");
   const [currentMotion, setCurrentMotion] = useState<MotionType>(propsMotion || "none");

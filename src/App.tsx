@@ -17,6 +17,7 @@ import {
   saveWaifuProfiles,
   getActiveWaifuId,
   setActiveWaifuId,
+  sanitizeProfiles,
   DEFAULT_WAIFU_PROFILES,
 } from "./lib/waifuStore";
 import pkg from "../package.json";
@@ -210,12 +211,16 @@ export default function App() {
       setSTTConfigState(settings.sttConfig);
     }
     if (settings.waifuProfiles && Array.isArray(settings.waifuProfiles) && settings.waifuProfiles.length > 0) {
-      setProfiles(settings.waifuProfiles);
-      saveWaifuProfiles(settings.waifuProfiles);
+      const sanitized = sanitizeProfiles(settings.waifuProfiles);
+      setProfiles(sanitized);
+      saveWaifuProfiles(sanitized);
     }
-    if (settings.activeProfileId) {
+    if (settings.activeProfileId && settings.activeProfileId !== "kei" && settings.activeProfileId !== "shizuku" && settings.activeProfileId !== "aoi") {
       setActiveProfileIdState(settings.activeProfileId);
       setActiveWaifuId(settings.activeProfileId);
+    } else {
+      setActiveProfileIdState("tamamo");
+      setActiveWaifuId("tamamo");
     }
     if (settings.trackingEngineEnabled !== undefined) {
       const isEnabled = Boolean(settings.trackingEngineEnabled);

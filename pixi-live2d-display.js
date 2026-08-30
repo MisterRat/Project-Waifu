@@ -3839,7 +3839,18 @@ var __async = (__this, __arguments, generator) => {
         parameterValue = -parameterValue;
       }
       for (let i = 0; i < this._parameterIds.length; ++i) {
-        model.setParameterValueById(this._parameterIds[i], parameterValue);
+        if (typeof model.multiplyParameterValueById === "function") {
+          model.multiplyParameterValueById(this._parameterIds[i], parameterValue);
+        } else if (typeof model.multiplyParameterValueByIndex === "function") {
+          const idx = model.getParameterIndex ? model.getParameterIndex(this._parameterIds[i]) : -1;
+          if (idx >= 0) {
+            model.multiplyParameterValueByIndex(idx, parameterValue);
+          } else {
+            model.setParameterValueById(this._parameterIds[i], parameterValue);
+          }
+        } else {
+          model.setParameterValueById(this._parameterIds[i], parameterValue);
+        }
       }
     }
     constructor(modelSetting) {

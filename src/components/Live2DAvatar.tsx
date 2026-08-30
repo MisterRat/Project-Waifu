@@ -1425,7 +1425,15 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
 
           // 4. Inject multi-joint angle coupling and physics jiggle
-          const hasNativeExprs = Boolean(activeNativeExpressionRef.current);
+          const exprMgr = model.internalModel?.motionManager?.expressionManager;
+          const hasActiveExpressionMotion = exprMgr
+            ? Boolean(
+                exprMgr.currentExpression ||
+                (exprMgr.queueManager?._motions && exprMgr.queueManager._motions.length > 0) ||
+                (typeof exprMgr.isFinished === "function" && !exprMgr.isFinished())
+              )
+            : false;
+          const hasNativeExprs = Boolean(activeNativeExpressionRef.current || hasActiveExpressionMotion);
           const lipSync = lipSyncEngine.update(dt);
           const activeSpeaking = isSpeakingRef.current || lipSync.isSpeaking;
           const currentMouthOpen = activeSpeaking

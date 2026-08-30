@@ -22,17 +22,44 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
 const PROFILES_STORAGE_KEY = "project_waifu_profiles_v5";
 const ACTIVE_WAIFU_ID_KEY = "project_waifu_active_id";
 
+// Clean up any stale localStorage keys from earlier app builds
+function cleanLegacyStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    const legacyKeys = [
+      "project_waifu_profiles_v1",
+      "project_waifu_profiles_v2",
+      "project_waifu_profiles_v3",
+      "project_waifu_profiles_v4",
+      "project_waifu_chat_kei",
+      "project_waifu_chat_shizuku",
+      "project_waifu_chat_aoi"
+    ];
+    legacyKeys.forEach((k) => localStorage.removeItem(k));
+  } catch (e) {}
+}
+
+export function sanitizeProfiles(profiles: WaifuProfile[]): WaifuProfile[] {
+  if (!Array.isArray(profiles) || profiles.length === 0) {
+    return DEFAULT_WAIFU_PROFILES;
+  }
+  let cleaned = profiles.filter((p: WaifuProfile) => p && p.id !== "shizuku" && p.id !== "aoi" && p.id !== "kei");
+  const hasTamamo = cleaned.some((p: WaifuProfile) => p.id === "tamamo");
+  if (!hasTamamo) {
+    cleaned = [DEFAULT_WAIFU_PROFILES[0], ...cleaned];
+  }
+  return cleaned;
+}
+
 export function loadWaifuProfiles(): WaifuProfile[] {
   try {
+    cleanLegacyStorage();
     const saved = localStorage.getItem(PROFILES_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        let cleaned = parsed.filter((p: WaifuProfile) => p.id !== "shizuku" && p.id !== "aoi" && p.id !== "kei");
-        const hasTamamo = cleaned.some((p: WaifuProfile) => p.id === "tamamo");
-        if (!hasTamamo) {
-          cleaned = [DEFAULT_WAIFU_PROFILES[0], ...cleaned];
-        }
+        const cleaned = sanitizeProfiles(parsed);
+        localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(cleaned));
         return cleaned;
       }
     }
@@ -44,7 +71,8 @@ export function loadWaifuProfiles(): WaifuProfile[] {
 
 export function saveWaifuProfiles(profiles: WaifuProfile[]): void {
   try {
-    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+    const cleaned = sanitizeProfiles(profiles);
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(cleaned));
   } catch (e) {
     console.warn("Failed to save waifu profiles to localStorage", e);
   }
