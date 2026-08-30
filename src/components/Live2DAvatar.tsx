@@ -306,11 +306,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           let matchedExpression: string | number | undefined = undefined;
           let matchedDefName: string = "";
           let matchedFile: string = "";
+          let bestIdx = -1;
+          let bestDef: any = null;
 
           if (Array.isArray(definitions) && definitions.length > 0) {
             const keywords = EMOTION_ALIAS_KEYWORDS[emotion] || [emotion.toLowerCase()];
-            let bestIdx = -1;
-            let bestDef: any = null;
 
             for (let i = 0; i < definitions.length; i++) {
               const def = definitions[i];
@@ -333,19 +333,19 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               }
             }
 
-            if (bestDef) {
-              matchedExpression = bestDef.name || bestDef.Name || bestDef.file || bestDef.File || bestIdx;
+            if (bestDef && bestIdx >= 0) {
+              matchedExpression = bestIdx;
               matchedDefName = bestDef.name || bestDef.Name || `index_${bestIdx}`;
               matchedFile = bestDef.file || bestDef.File || `${matchedDefName}.exp3.json`;
             }
           }
 
           if (matchedExpression !== undefined) {
-            activeNativeExpressionRef.current = String(matchedExpression);
+            activeNativeExpressionRef.current = String(matchedDefName || matchedExpression);
             const res = (model as any).expression(matchedExpression);
             logLive2DDiagnostic(
               "model-file",
-              `[Model File] Executing native expression file for "${emotion}": "${matchedFile}" (Name: "${matchedDefName}")`,
+              `[Model File] Executing native expression file for "${emotion}": "${matchedFile}" (Index: ${bestIdx}, Name: "${matchedDefName}")`,
               { emotion, matchedExpression, matchedFile, result: res }
             );
           } else {
@@ -1271,152 +1271,264 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           let cheekBlush = 0;
           let browLY = 0;
           let browRY = 0;
-          let browAngle = 0;
+          let browLAngle = 0;
+          let browRAngle = 0;
+          let browLForm = 0;
+          let browRForm = 0;
           let eyeLOpen = 1.0;
           let eyeROpen = 1.0;
+          let eyeLSmile = 0;
+          let eyeRSmile = 0;
+          let eyeBallForm = 0;
+          let eyeBallX = 0;
+          let eyeBallY = 0;
+          let emotionTear = 0;
 
           switch (emotionRef.current) {
             case "happy":
               mouthForm = 1.0;
-              cheekBlush = 0.35;
-              browLY = 0.25;
-              browRY = 0.25;
-              browAngle = 0.0;
-              eyeLOpen = 1.05;
-              eyeROpen = 1.05;
+              cheekBlush = 0.4;
+              browLY = 0.35;
+              browRY = 0.35;
+              browLAngle = 0.1;
+              browRAngle = 0.1;
+              browLForm = 0.3;
+              browRForm = 0.3;
+              eyeLOpen = 0.9;
+              eyeROpen = 0.9;
+              eyeLSmile = 1.0;
+              eyeRSmile = 1.0;
+              eyeBallForm = 0.3;
               break;
             case "excited":
               mouthForm = 1.0;
-              cheekBlush = 0.8;
+              cheekBlush = 0.85;
               eyeLOpen = 1.35;
               eyeROpen = 1.35;
+              eyeLSmile = 0.8;
+              eyeRSmile = 0.8;
+              eyeBallForm = 0.5;
               browLY = 0.7;
               browRY = 0.7;
-              browAngle = 0.1;
+              browLAngle = 0.2;
+              browRAngle = 0.2;
+              browLForm = 0.4;
+              browRForm = 0.4;
               break;
             case "flirty":
               mouthForm = 0.85;
-              cheekBlush = 0.7;
-              eyeLOpen = 0.05;
-              eyeROpen = 1.05;
+              cheekBlush = 0.75;
+              eyeLOpen = 0.0;
+              eyeROpen = 1.0;
+              eyeLSmile = 1.0;
+              eyeRSmile = 0.85;
+              eyeBallForm = 0.4;
               browLY = 0.35;
               browRY = 0.15;
-              browAngle = 0.2;
+              browLAngle = 0.25;
+              browRAngle = 0.1;
+              browLForm = 0.2;
+              browRForm = 0.2;
               break;
             case "smirk":
-              mouthForm = 0.75;
+              mouthForm = 0.8;
               cheekBlush = 0.2;
-              eyeLOpen = 0.9;
-              eyeROpen = 0.8;
+              eyeLOpen = 0.8;
+              eyeROpen = 0.65;
+              eyeLSmile = 0.6;
+              eyeRSmile = 0.3;
+              eyeBallForm = -0.2;
               browLY = 0.5;
-              browRY = -0.2;
-              browAngle = 0.3;
+              browRY = -0.3;
+              browLAngle = 0.35;
+              browRAngle = -0.2;
+              browLForm = 0.2;
+              browRForm = -0.2;
               break;
             case "surprised":
               mouthForm = 0.0;
               cheekBlush = 0.2;
-              eyeLOpen = 1.4;
-              eyeROpen = 1.4;
+              eyeLOpen = 1.45;
+              eyeROpen = 1.45;
+              eyeLSmile = 0.0;
+              eyeRSmile = 0.0;
+              eyeBallForm = -0.4;
               browLY = 0.9;
               browRY = 0.9;
-              browAngle = 0.0;
+              browLAngle = 0.0;
+              browRAngle = 0.0;
               break;
             case "thinking":
               mouthForm = 0.1;
               cheekBlush = 0.1;
-              eyeLOpen = 0.85;
+              eyeLOpen = 0.8;
               eyeROpen = 0.85;
+              eyeLSmile = 0.0;
+              eyeRSmile = 0.0;
+              eyeBallForm = 0.0;
+              eyeBallX = 0.35;
+              eyeBallY = 0.45;
               browLY = 0.65;
               browRY = -0.35;
-              browAngle = 0.2;
+              browLAngle = 0.3;
+              browRAngle = -0.2;
+              browLForm = 0.1;
+              browRForm = -0.2;
               break;
             case "confused":
-              mouthForm = -0.2;
-              cheekBlush = 0.1;
-              eyeLOpen = 1.1;
-              eyeROpen = 0.85;
+              mouthForm = -0.25;
+              cheekBlush = 0.15;
+              eyeLOpen = 1.15;
+              eyeROpen = 0.75;
+              eyeLSmile = 0.0;
+              eyeRSmile = 0.0;
+              eyeBallForm = -0.2;
               browLY = 0.6;
               browRY = -0.5;
-              browAngle = -0.2;
+              browLAngle = -0.3;
+              browRAngle = 0.4;
+              browLForm = -0.2;
+              browRForm = 0.2;
               break;
             case "embarrassed":
               mouthForm = -0.3;
               cheekBlush = 1.0;
-              eyeLOpen = 0.8;
-              eyeROpen = 0.8;
-              browLY = -0.3;
-              browRY = -0.3;
-              browAngle = -0.5;
+              eyeLOpen = 0.7;
+              eyeROpen = 0.7;
+              eyeLSmile = 0.5;
+              eyeRSmile = 0.5;
+              eyeBallForm = 0.2;
+              eyeBallY = -0.35;
+              browLY = -0.4;
+              browRY = -0.4;
+              browLAngle = -0.5;
+              browRAngle = -0.5;
+              browLForm = -0.4;
+              browRForm = -0.4;
               break;
             case "tipsy":
               mouthForm = 0.6;
               cheekBlush = 0.95;
-              eyeLOpen = 0.65;
-              eyeROpen = 0.7;
+              eyeLOpen = 0.6;
+              eyeROpen = 0.65;
+              eyeLSmile = 0.7;
+              eyeRSmile = 0.7;
+              eyeBallForm = 0.3;
               browLY = -0.2;
               browRY = 0.1;
-              browAngle = -0.3;
+              browLAngle = -0.3;
+              browRAngle = -0.3;
+              browLForm = -0.3;
+              browRForm = -0.3;
               break;
             case "tired":
               mouthForm = -0.4;
               cheekBlush = 0.0;
-              eyeLOpen = 0.45;
-              eyeROpen = 0.45;
-              browLY = -0.4;
-              browRY = -0.4;
-              browAngle = -0.4;
+              eyeLOpen = 0.35;
+              eyeROpen = 0.35;
+              eyeLSmile = 0.0;
+              eyeRSmile = 0.0;
+              eyeBallForm = -0.3;
+              browLY = -0.45;
+              browRY = -0.45;
+              browLAngle = -0.4;
+              browRAngle = -0.4;
+              browLForm = -0.3;
+              browRForm = -0.3;
               break;
             case "sad":
               mouthForm = -1.0;
               cheekBlush = 0.0;
+              eyeLOpen = 0.75;
+              eyeROpen = 0.75;
+              eyeLSmile = 0.0;
+              eyeRSmile = 0.0;
+              eyeBallForm = -0.4;
               browLY = -0.7;
               browRY = -0.7;
-              browAngle = -0.6;
-              eyeLOpen = 0.85;
-              eyeROpen = 0.85;
+              browLAngle = -0.6;
+              browRAngle = -0.6;
+              browLForm = -0.6;
+              browRForm = -0.6;
+              emotionTear = 0.2;
               break;
             case "crying":
               mouthForm = -0.95;
               cheekBlush = 0.6;
-              eyeLOpen = 0.75;
-              eyeROpen = 0.75;
-              browLY = -0.7;
-              browRY = -0.7;
-              browAngle = -0.8;
+              eyeLOpen = 0.45;
+              eyeROpen = 0.45;
+              eyeLSmile = 0.0;
+              eyeRSmile = 0.0;
+              eyeBallForm = -0.6;
+              browLY = -0.85;
+              browRY = -0.85;
+              browLAngle = -0.8;
+              browRAngle = -0.8;
+              browLForm = -0.7;
+              browRForm = -0.7;
+              emotionTear = 1.0;
               break;
             case "scared":
               mouthForm = -0.6;
               cheekBlush = 0.0;
-              eyeLOpen = 1.45;
-              eyeROpen = 1.45;
+              eyeLOpen = 1.5;
+              eyeROpen = 1.5;
+              eyeLSmile = 0.0;
+              eyeRSmile = 0.0;
+              eyeBallForm = -0.7;
               browLY = 0.85;
               browRY = 0.85;
-              browAngle = -0.6;
+              browLAngle = -0.65;
+              browRAngle = -0.65;
+              browLForm = -0.5;
+              browRForm = -0.5;
+              emotionTear = 0.3;
               break;
             case "angry":
               mouthForm = -0.85;
               cheekBlush = 0.0;
-              browLY = -0.8;
-              browRY = -0.8;
-              browAngle = 0.7;
-              eyeLOpen = 0.9;
-              eyeROpen = 0.9;
+              eyeLOpen = 0.85;
+              eyeROpen = 0.85;
+              eyeLSmile = 0.0;
+              eyeRSmile = 0.0;
+              eyeBallForm = -0.5;
+              browLY = -0.85;
+              browRY = -0.85;
+              browLAngle = 0.8;
+              browRAngle = 0.8;
+              browLForm = -0.6;
+              browRForm = -0.6;
               break;
             case "evil":
-              mouthForm = 0.7;
+              mouthForm = 0.75;
               cheekBlush = 0.0;
-              eyeLOpen = 0.75;
-              eyeROpen = 0.75;
-              browLY = -0.6;
-              browRY = -0.6;
-              browAngle = 0.85;
+              eyeLOpen = 0.7;
+              eyeROpen = 0.7;
+              eyeLSmile = 0.3;
+              eyeRSmile = 0.3;
+              eyeBallForm = -0.4;
+              browLY = -0.7;
+              browRY = -0.7;
+              browLAngle = 0.85;
+              browRAngle = 0.85;
+              browLForm = -0.5;
+              browRForm = -0.5;
               break;
             default:
               mouthForm = 0.0;
               cheekBlush = 0.0;
+              eyeLOpen = 1.0;
+              eyeROpen = 1.0;
+              eyeLSmile = 0.0;
+              eyeRSmile = 0.0;
+              eyeBallForm = 0.0;
               browLY = 0.0;
               browRY = 0.0;
-              browAngle = 0.0;
+              browLAngle = 0.0;
+              browRAngle = 0.0;
+              browLForm = 0.0;
+              browRForm = 0.0;
+              emotionTear = 0.0;
               break;
           }
 
@@ -1454,9 +1566,18 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               emotionCheek: cheekBlush,
               emotionEyeLOpen: eyeLOpen,
               emotionEyeROpen: eyeROpen,
+              emotionEyeLSmile: eyeLSmile,
+              emotionEyeRSmile: eyeRSmile,
+              emotionEyeBallForm: eyeBallForm,
+              emotionEyeBallX: eyeBallX,
+              emotionEyeBallY: eyeBallY,
               emotionBrowLY: browLY,
               emotionBrowRY: browRY,
-              emotionBrowAngle: browAngle,
+              emotionBrowLAngle: browLAngle,
+              emotionBrowRAngle: browRAngle,
+              emotionBrowLForm: browLForm,
+              emotionBrowRForm: browRForm,
+              emotionTear: emotionTear,
               motionAngleX,
               motionAngleY,
               motionAngleZ,

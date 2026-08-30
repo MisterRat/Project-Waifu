@@ -41,9 +41,19 @@ export interface ParameterUpdateOptions {
   emotionCheek?: number;
   emotionEyeLOpen?: number;
   emotionEyeROpen?: number;
+  emotionEyeLSmile?: number;
+  emotionEyeRSmile?: number;
+  emotionEyeBallForm?: number;
+  emotionEyeBallX?: number;
+  emotionEyeBallY?: number;
   emotionBrowLY?: number;
   emotionBrowRY?: number;
   emotionBrowAngle?: number;
+  emotionBrowLAngle?: number;
+  emotionBrowRAngle?: number;
+  emotionBrowLForm?: number;
+  emotionBrowRForm?: number;
+  emotionTear?: number;
   motionAngleX?: number;
   motionAngleY?: number;
   motionAngleZ?: number;
@@ -166,8 +176,10 @@ export function applyLive2DMultiJointKinematics(
   const bodyAngleZ = dynamicBodyTilt + motionBodyAngleZ;
 
   // 7. Eye Gaze (ParamEyeBallX / ParamEyeBallY): -1 to +1
-  const eyeBallX = lookX * 0.95;
-  const eyeBallY = -lookY * 0.95;
+  const emotionEyeBallOffsetX = options.emotionEyeBallX ?? 0;
+  const emotionEyeBallOffsetY = options.emotionEyeBallY ?? 0;
+  const eyeBallX = Math.max(-1.0, Math.min(1.0, lookX * 0.95 + emotionEyeBallOffsetX));
+  const eyeBallY = Math.max(-1.0, Math.min(1.0, -lookY * 0.95 + emotionEyeBallOffsetY));
 
   // 8. Natural Breathing Cycle (Sine wave at ~16 breaths/min)
   const breathCycle = (Math.sin((timeMs / 1000) * 2.2) + 1.0) * 0.5;
@@ -286,16 +298,16 @@ export function applyLive2DMultiJointKinematics(
     setParam("ParamBlush", "PARAM_BLUSH", emotionCheek);
     setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", emotionEyeLOpen);
     setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", emotionEyeROpen);
+    setParam("ParamEyeLSmile", "PARAM_EYE_L_SMILE", options.emotionEyeLSmile ?? 0);
+    setParam("ParamEyeRSmile", "PARAM_EYE_R_SMILE", options.emotionEyeRSmile ?? 0);
+    setParam("ParamEyeBallForm", "PARAM_EYE_BALL_FORM", options.emotionEyeBallForm ?? 0);
     setParam("ParamBrowLY", "PARAM_BROW_L_Y", emotionBrowLY);
     setParam("ParamBrowRY", "PARAM_BROW_R_Y", emotionBrowRY);
-    setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", emotionBrowAngle);
-    setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", emotionBrowAngle);
-    setParam("ParamBrowLForm", "PARAM_BROW_L_FORM", 0);
-    setParam("ParamBrowRForm", "PARAM_BROW_R_FORM", 0);
-    setParam("ParamEyeLSmile", "PARAM_EYE_L_SMILE", 0);
-    setParam("ParamEyeRSmile", "PARAM_EYE_R_SMILE", 0);
-    setParam("ParamEyeBallForm", "PARAM_EYE_BALL_FORM", 0);
-    setParam("ParamTear", "PARAM_TEAR", 0);
+    setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", options.emotionBrowLAngle ?? options.emotionBrowAngle ?? 0);
+    setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", options.emotionBrowRAngle ?? options.emotionBrowAngle ?? 0);
+    setParam("ParamBrowLForm", "PARAM_BROW_L_FORM", options.emotionBrowLForm ?? 0);
+    setParam("ParamBrowRForm", "PARAM_BROW_R_FORM", options.emotionBrowRForm ?? 0);
+    setParam("ParamTear", "PARAM_TEAR", options.emotionTear ?? 0);
   }
 
   // Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)

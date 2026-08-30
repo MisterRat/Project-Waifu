@@ -1683,8 +1683,13 @@ var __async = (__this, __arguments, generator) => {
     }
     setEyeParams(value) {
       this.eyeParamValue = clamp(value, 0, 1);
-      this.coreModel.setParamFloat(this.leftParam, this.eyeParamValue);
-      this.coreModel.setParamFloat(this.rightParam, this.eyeParamValue);
+      if (typeof this.coreModel.multParamFloat === "function") {
+        this.coreModel.multParamFloat(this.leftParam, this.eyeParamValue);
+        this.coreModel.multParamFloat(this.rightParam, this.eyeParamValue);
+      } else {
+        this.coreModel.setParamFloat(this.leftParam, this.eyeParamValue);
+        this.coreModel.setParamFloat(this.rightParam, this.eyeParamValue);
+      }
     }
     update(dt) {
       switch (this.eyeState) {
@@ -2788,27 +2793,24 @@ var __async = (__this, __arguments, generator) => {
     }
     static create(json) {
       const expression = new CubismExpressionMotion();
-      const fadeInTime = json.FadeInTime;
-      const fadeOutTime = json.FadeOutTime;
+      const fadeInTime = json.FadeInTime !== void 0 ? json.FadeInTime : (json.fadeIn !== void 0 ? json.fadeIn : DefaultFadeTime);
+      const fadeOutTime = json.FadeOutTime !== void 0 ? json.FadeOutTime : (json.fadeOut !== void 0 ? json.fadeOut : DefaultFadeTime);
       expression.setFadeInTime(fadeInTime !== void 0 ? fadeInTime : DefaultFadeTime);
       expression.setFadeOutTime(fadeOutTime !== void 0 ? fadeOutTime : DefaultFadeTime);
-      const parameters = json.Parameters || [];
+      const parameters = json.Parameters || json.parameters || json.params || [];
       for (let i = 0; i < parameters.length; ++i) {
         const param = parameters[i];
-        const parameterId = param.Id;
-        const value = param.Value;
+        const parameterId = param.Id || param.id || param.ID || param.ParameterId;
+        if (!parameterId) continue;
+        const value = param.Value !== void 0 ? param.Value : (param.value !== void 0 ? param.value : (param.val !== void 0 ? param.val : 0));
         let blendType;
-        switch (param.Blend) {
-          case "Multiply":
-            blendType = ExpressionBlendType.ExpressionBlendType_Multiply;
-            break;
-          case "Overwrite":
-            blendType = ExpressionBlendType.ExpressionBlendType_Overwrite;
-            break;
-          case "Add":
-          default:
-            blendType = ExpressionBlendType.ExpressionBlendType_Add;
-            break;
+        const blendStr = String(param.Blend || param.blend || param.calc || param.calcType || param.Type || param.type || "").toLowerCase();
+        if (blendStr === "multiply" || blendStr === "mult" || param.Blend === 1) {
+          blendType = ExpressionBlendType.ExpressionBlendType_Multiply;
+        } else if (blendStr === "overwrite" || blendStr === "set" || param.Blend === 2) {
+          blendType = ExpressionBlendType.ExpressionBlendType_Overwrite;
+        } else {
+          blendType = ExpressionBlendType.ExpressionBlendType_Add;
         }
         const item = {
           parameterId,
@@ -2824,15 +2826,21 @@ var __async = (__this, __arguments, generator) => {
         const parameter = this._parameters[i];
         switch (parameter.blendType) {
           case ExpressionBlendType.ExpressionBlendType_Add: {
-            model.addParameterValueById(parameter.parameterId, parameter.value, weight);
+            if (typeof model.addParameterValueById === "function") {
+              model.addParameterValueById(parameter.parameterId, parameter.value, weight);
+            }
             break;
           }
           case ExpressionBlendType.ExpressionBlendType_Multiply: {
-            model.multiplyParameterValueById(parameter.parameterId, parameter.value, weight);
+            if (typeof model.multiplyParameterValueById === "function") {
+              model.multiplyParameterValueById(parameter.parameterId, parameter.value, weight);
+            }
             break;
           }
           case ExpressionBlendType.ExpressionBlendType_Overwrite: {
-            model.setParameterValueById(parameter.parameterId, parameter.value, weight);
+            if (typeof model.setParameterValueById === "function") {
+              model.setParameterValueById(parameter.parameterId, parameter.value, weight);
+            }
             break;
           }
         }
@@ -3065,16 +3073,24 @@ var __async = (__this, __arguments, generator) => {
       return this.queueManager.isFinished();
     }
     getExpressionIndex(name) {
-      return this.definitions.findIndex((def) => def.Name === name);
+      if (typeof name === "number") return name;
+      const target = String(name).toLowerCase();
+      return this.definitions.findIndex((def, idx) => {
+        if (!def) return false;
+        const defName = String(def.Name || def.name || "").toLowerCase();
+        const defFile = String(def.File || def.file || "").toLowerCase();
+        const defFilename = defFile.split("/").pop()?.replace(/\.(exp3|exp)\.json$/i, "").toLowerCase() || "";
+        return defName === target || defFile === target || defFilename === target || defFile.endsWith(target) || String(idx) === target;
+      });
     }
     getExpressionFile(definition) {
-      return definition.File;
+      return definition.File || definition.file;
     }
     createExpression(data, definition) {
       return CubismExpressionMotion.create(data);
     }
     _setExpression(motion) {
-      return this.queueManager.startMotion(motion, false, performance.now());
+      return this.queueManager.startMotion(motion, false, performance.now() / 1e3);
     }
     stopAllExpressions() {
       this.queueManager.stopAllMotions();
