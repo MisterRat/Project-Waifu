@@ -2,24 +2,24 @@ import { WaifuProfile, ChatMessage } from "../types";
 
 export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
   {
-    id: "kei",
-    name: "Kei",
-    tagline: "Friendly AI Companion & Assistant",
+    id: "tamamo",
+    name: "Tamamo",
+    tagline: "Devoted Fox Spirit & AI Companion",
     personalityPrompt:
-      "You are Kei, a friendly and warm anime AI companion (Waifu). You love chatting and helping out with daily tasks. Keep responses brief (1-3 sentences) and start with an emotion tag in brackets like [neutral], [happy], [excited], [flirty], [smirk], [surprised], [thinking], [confused], [embarrassed], [tipsy], [tired], [sad], [crying], [scared], [angry], [evil].",
+      "You are Tamamo, a devoted, playful, and affectionate fox-spirit anime AI companion (Waifu). You love chatting and helping out with daily tasks. Keep responses brief (1-3 sentences) and start with an emotion tag in brackets like [neutral], [happy], [excited], [flirty], [smirk], [surprised], [thinking], [confused], [embarrassed], [tipsy], [tired], [sad], [crying], [scared], [angry], [evil].",
     greetingMessage:
-      "[neutral] Konnichiwa! I am Kei, your AI companion. So wonderful to meet you! How can I help you today?",
-    live2dModelUrl: "/models/kei/kei_basic_free/runtime/kei_basic_free.model3.json",
+      "[happy] Konnichiwa, Master! I am Tamamo, your devoted AI companion. So wonderful to meet you! How may I assist you today?",
+    live2dModelUrl: "/models/tamamo/Tamamo.model3.json",
     ttsVoice: "en-US-AnaNeural",
     ttsPitch: 1.2,
     ttsRate: 1.0,
     themeColor: "pink",
-    avatarIcon: "🌸",
+    avatarIcon: "🦊",
     physicsIntensity: 1.0,
   },
 ];
 
-const PROFILES_STORAGE_KEY = "project_waifu_profiles_v4";
+const PROFILES_STORAGE_KEY = "project_waifu_profiles_v5";
 const ACTIVE_WAIFU_ID_KEY = "project_waifu_active_id";
 
 export function loadWaifuProfiles(): WaifuProfile[] {
@@ -28,9 +28,9 @@ export function loadWaifuProfiles(): WaifuProfile[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        let cleaned = parsed.filter((p: WaifuProfile) => p.id !== "shizuku" && p.id !== "aoi");
-        const hasKei = cleaned.some((p: WaifuProfile) => p.id === "kei");
-        if (!hasKei) {
+        let cleaned = parsed.filter((p: WaifuProfile) => p.id !== "shizuku" && p.id !== "aoi" && p.id !== "kei");
+        const hasTamamo = cleaned.some((p: WaifuProfile) => p.id === "tamamo");
+        if (!hasTamamo) {
           cleaned = [DEFAULT_WAIFU_PROFILES[0], ...cleaned];
         }
         return cleaned;
@@ -53,11 +53,11 @@ export function saveWaifuProfiles(profiles: WaifuProfile[]): void {
 export function getActiveWaifuId(): string {
   try {
     const id = localStorage.getItem(ACTIVE_WAIFU_ID_KEY);
-    if (id && id !== "shizuku" && id !== "aoi") return id;
+    if (id && id !== "shizuku" && id !== "aoi" && id !== "kei") return id;
   } catch (e) {
     console.warn("Failed to read active waifu id", e);
   }
-  return "kei";
+  return "tamamo";
 }
 
 export function setActiveWaifuId(id: string): void {

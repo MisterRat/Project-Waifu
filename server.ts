@@ -777,9 +777,9 @@ async function startServer() {
     fs.mkdirSync(MODELS_DIR, { recursive: true });
   }
 
-  // Auto-extract assets/kei_en.zip if present and model3.json not yet extracted
-  const defaultKeiZipPath = path.join(process.cwd(), "assets", "kei_en.zip");
-  const keiFolderPath = path.join(MODELS_DIR, "kei");
+  // Auto-extract assets/Tamamo.zip if present and model3.json not yet extracted
+  const defaultTamamoZipPath = path.join(process.cwd(), "assets", "Tamamo.zip");
+  const tamamoFolderPath = path.join(MODELS_DIR, "tamamo");
 
   const ensureModelExtracted = async (modelId: string): Promise<boolean> => {
     const modelFolderPath = path.join(MODELS_DIR, modelId);
@@ -802,17 +802,17 @@ async function startServer() {
       return true;
     }
 
-    if (modelId === "kei" && fs.existsSync(defaultKeiZipPath)) {
+    if ((modelId === "tamamo" || modelId === "Tamamo") && fs.existsSync(defaultTamamoZipPath)) {
       try {
-        console.log("[Project Waifu] Extracting default Kei model from assets/kei_en.zip...");
-        const zipBuffer = fs.readFileSync(defaultKeiZipPath);
+        console.log("[Project Waifu] Extracting default Tamamo model from assets/Tamamo.zip...");
+        const zipBuffer = fs.readFileSync(defaultTamamoZipPath);
         const zip = await JSZip.loadAsync(zipBuffer);
-        fs.mkdirSync(keiFolderPath, { recursive: true });
+        fs.mkdirSync(tamamoFolderPath, { recursive: true });
         const zipKeys = Object.keys(zip.files);
         for (const key of zipKeys) {
           const entry = zip.files[key];
           if (entry.dir) continue;
-          const outPath = path.join(keiFolderPath, key);
+          const outPath = path.join(tamamoFolderPath, key);
           const parentDir = path.dirname(outPath);
           if (!fs.existsSync(parentDir)) {
             fs.mkdirSync(parentDir, { recursive: true });
@@ -822,7 +822,7 @@ async function startServer() {
         }
         return true;
       } catch (err) {
-        console.error("[Project Waifu] Failed to extract kei_en.zip:", err);
+        console.error("[Project Waifu] Failed to extract Tamamo.zip:", err);
       }
     }
 
@@ -857,8 +857,8 @@ async function startServer() {
 
   // Restore all models stored in SQLite database on startup
   try {
-    if (fs.existsSync(defaultKeiZipPath)) {
-      await ensureModelExtracted("kei");
+    if (fs.existsSync(defaultTamamoZipPath)) {
+      await ensureModelExtracted("tamamo");
     }
     const savedZips = await getAllLive2dZips();
     for (const z of savedZips) {
@@ -904,7 +904,7 @@ async function startServer() {
       }
 
       // Ensure default model and all DB-stored models are extracted
-      await ensureModelExtracted("kei");
+      await ensureModelExtracted("tamamo");
       const dbZips = await getAllLive2dZips();
       for (const z of dbZips) {
         await ensureModelExtracted(z.modelId);

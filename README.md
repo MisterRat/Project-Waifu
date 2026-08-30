@@ -13,7 +13,7 @@ An interactive, customizable Web-based AI Companion application featuring **Live
    - **Live Parameter Tracking**: Real-time mouth tracking, emotion badges, and eye/head tracking following cursor or touch.
 
 2. **💬 AI Chat & Voice Assistant**
-   - **Persona Manager**: Quick-switch between preset companions (Kei, Rin, Aoi, etc.) or create custom AI personas with custom system prompts and avatars.
+   - **Persona Manager**: Custom AI personas with customizable system prompts, Live2D avatar models (Tamamo included as the default model), and voice configurations.
    - **TTS & STT Support**: Built-in speech synthesis and browser speech recognition for hands-free conversations.
    - **Custom Model ZIP Upload**: Directly upload `.zip` packages containing Live2D `model3.json` and associated asset files.
 
