@@ -295,6 +295,49 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             resetParam("ParamEyeRSmile", "PARAM_EYE_R_SMILE", 0);
             resetParam("ParamEyeBallForm", "PARAM_EYE_BALL_FORM", 0);
             resetParam("ParamTear", "PARAM_TEAR", 0);
+            resetParam("ParamQuestionMark", "PARAM_QUESTION_MARK", 0);
+            resetParam("ParamQuestion", "PARAM_QUESTION", 0);
+            resetParam("ParamHatena", "PARAM_HATENA", 0);
+            resetParam("ParamSweat", "PARAM_SWEAT", 0);
+            resetParam("ParamAse", "PARAM_ASE", 0);
+            resetParam("ParamAnger", "PARAM_ANGER", 0);
+            resetParam("ParamAngry", "PARAM_ANGRY", 0);
+            resetParam("ParamIkari", "PARAM_IKARI", 0);
+            resetParam("ParamVein", "PARAM_VEIN", 0);
+            resetParam("ParamHeartEyes", "PARAM_HEART_EYES", 0);
+            resetParam("ParamHeartEye", "PARAM_HEART_EYE", 0);
+            resetParam("ParamStarEyes", "PARAM_STAR_EYES", 0);
+            resetParam("ParamStarEye", "PARAM_STAR_EYE", 0);
+            resetParam("ParamExclamation", "PARAM_EXCLAMATION", 0);
+            resetParam("ParamBikkuri", "PARAM_BIKKURI", 0);
+            resetParam("ParamDarkFace", "PARAM_DARK_FACE", 0);
+            resetParam("ParamShadow", "PARAM_SHADOW", 0);
+
+            const resetPart = (idC4: string, idC2: string, val: number) => {
+              try {
+                if (typeof core.setPartOpacityById === "function") {
+                  core.setPartOpacityById(idC4, val);
+                  core.setPartOpacityById(idC2, val);
+                }
+                if (typeof core.setPartsOpacity === "function") {
+                  core.setPartsOpacity(idC2, val);
+                  core.setPartsOpacity(idC4, val);
+                }
+              } catch (e) {}
+            };
+
+            resetPart("PartTear", "PART_TEAR", 0);
+            resetPart("PartQuestionMark", "PART_QUESTION_MARK", 0);
+            resetPart("PartQuestion", "PART_QUESTION", 0);
+            resetPart("PartHatena", "PART_HATENA", 0);
+            resetPart("PartSweat", "PART_SWEAT", 0);
+            resetPart("PartAse", "PART_ASE", 0);
+            resetPart("PartAnger", "PART_ANGER", 0);
+            resetPart("PartIkari", "PART_IKARI", 0);
+            resetPart("PartHeartEyes", "PART_HEART_EYES", 0);
+            resetPart("PartStarEyes", "PART_STAR_EYES", 0);
+            resetPart("PartExclamation", "PART_EXCLAMATION", 0);
+            resetPart("PartDarkFace", "PART_DARK_FACE", 0);
           }
 
           logLive2DDiagnostic(
@@ -1283,6 +1326,13 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           let eyeBallX = 0;
           let eyeBallY = 0;
           let emotionTear = 0;
+          let emotionQuestionMark = 0;
+          let emotionExclamation = 0;
+          let emotionSweat = 0;
+          let emotionAnger = 0;
+          let emotionHeartEyes = 0;
+          let emotionStarEyes = 0;
+          let emotionDarkFace = 0;
 
           switch (emotionRef.current) {
             case "happy":
@@ -1314,6 +1364,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = 0.2;
               browLForm = 0.4;
               browRForm = 0.4;
+              emotionStarEyes = 0.85;
               break;
             case "flirty":
               mouthForm = 0.85;
@@ -1329,6 +1380,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = 0.1;
               browLForm = 0.2;
               browRForm = 0.2;
+              emotionHeartEyes = 1.0;
               break;
             case "smirk":
               mouthForm = 0.8;
@@ -1357,6 +1409,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRY = 0.9;
               browLAngle = 0.0;
               browRAngle = 0.0;
+              emotionExclamation = 1.0;
               break;
             case "thinking":
               mouthForm = 0.1;
@@ -1374,6 +1427,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = -0.2;
               browLForm = 0.1;
               browRForm = -0.2;
+              emotionQuestionMark = 0.5;
               break;
             case "confused":
               mouthForm = -0.25;
@@ -1389,6 +1443,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = 0.4;
               browLForm = -0.2;
               browRForm = 0.2;
+              emotionQuestionMark = 1.0;
+              emotionSweat = 0.35;
               break;
             case "embarrassed":
               mouthForm = -0.3;
@@ -1405,6 +1461,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = -0.5;
               browLForm = -0.4;
               browRForm = -0.4;
+              emotionSweat = 0.6;
               break;
             case "tipsy":
               mouthForm = 0.6;
@@ -1435,6 +1492,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = -0.4;
               browLForm = -0.3;
               browRForm = -0.3;
+              emotionSweat = 0.2;
               break;
             case "sad":
               mouthForm = -1.0;
@@ -1482,6 +1540,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = -0.65;
               browLForm = -0.5;
               browRForm = -0.5;
+              emotionSweat = 0.85;
               emotionTear = 0.3;
               break;
             case "angry":
@@ -1498,6 +1557,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = 0.8;
               browLForm = -0.6;
               browRForm = -0.6;
+              emotionAnger = 1.0;
               break;
             case "evil":
               mouthForm = 0.75;
@@ -1513,6 +1573,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = 0.85;
               browLForm = -0.5;
               browRForm = -0.5;
+              emotionAnger = 0.4;
+              emotionDarkFace = 0.8;
               break;
             default:
               mouthForm = 0.0;
@@ -1537,15 +1599,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
 
           // 4. Inject multi-joint angle coupling and physics jiggle
-          const exprMgr = model.internalModel?.motionManager?.expressionManager;
-          const hasActiveExpressionMotion = exprMgr
-            ? Boolean(
-                exprMgr.currentExpression ||
-                (exprMgr.queueManager?._motions && exprMgr.queueManager._motions.length > 0) ||
-                (typeof exprMgr.isFinished === "function" && !exprMgr.isFinished())
-              )
-            : false;
-          const hasNativeExprs = Boolean(activeNativeExpressionRef.current || hasActiveExpressionMotion);
+          const hasNativeExprs = Boolean(activeNativeExpressionRef.current);
           const lipSync = lipSyncEngine.update(dt);
           const activeSpeaking = isSpeakingRef.current || lipSync.isSpeaking;
           const currentMouthOpen = activeSpeaking
@@ -1578,6 +1632,13 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               emotionBrowLForm: browLForm,
               emotionBrowRForm: browRForm,
               emotionTear: emotionTear,
+              emotionQuestionMark,
+              emotionExclamation,
+              emotionSweat,
+              emotionAnger,
+              emotionHeartEyes,
+              emotionStarEyes,
+              emotionDarkFace,
               motionAngleX,
               motionAngleY,
               motionAngleZ,

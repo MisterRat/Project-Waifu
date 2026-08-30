@@ -54,6 +54,13 @@ export interface ParameterUpdateOptions {
   emotionBrowLForm?: number;
   emotionBrowRForm?: number;
   emotionTear?: number;
+  emotionQuestionMark?: number;
+  emotionExclamation?: number;
+  emotionSweat?: number;
+  emotionAnger?: number;
+  emotionHeartEyes?: number;
+  emotionStarEyes?: number;
+  emotionDarkFace?: number;
   motionAngleX?: number;
   motionAngleY?: number;
   motionAngleZ?: number;
@@ -232,6 +239,29 @@ export function applyLive2DMultiJointKinematics(
     }
   };
 
+  // Robust part opacity setter for part-based expressions and emote overlays
+  const setPart = (idC4: string, idC2: string, value: number) => {
+    try {
+      if (typeof coreModel.setPartOpacityById === "function") {
+        coreModel.setPartOpacityById(idC4, value);
+        coreModel.setPartOpacityById(idC2, value);
+      }
+      if (typeof coreModel.setPartsOpacity === "function") {
+        coreModel.setPartsOpacity(idC2, value);
+        coreModel.setPartsOpacity(idC4, value);
+      }
+      if (coreModel._model && typeof coreModel._model.setPartOpacityByIndex === "function") {
+        const partIds = coreModel._partIds;
+        if (Array.isArray(partIds)) {
+          const idx = partIds.indexOf(idC4) !== -1 ? partIds.indexOf(idC4) : partIds.indexOf(idC2);
+          if (idx !== -1) {
+            coreModel._model.setPartOpacityByIndex(idx, value);
+          }
+        }
+      }
+    } catch (e) {}
+  };
+
   // Set Core Multi-Joint Parameters
   setParam("ParamAngleX", "PARAM_ANGLE_X", angleX);
   setParam("ParamAngleY", "PARAM_ANGLE_Y", angleY);
@@ -308,6 +338,53 @@ export function applyLive2DMultiJointKinematics(
     setParam("ParamBrowLForm", "PARAM_BROW_L_FORM", options.emotionBrowLForm ?? 0);
     setParam("ParamBrowRForm", "PARAM_BROW_R_FORM", options.emotionBrowRForm ?? 0);
     setParam("ParamTear", "PARAM_TEAR", options.emotionTear ?? 0);
+    setPart("PartTear", "PART_TEAR", options.emotionTear ?? 0);
+
+    // Emote marks / overlays (Question mark, Sweat, Anger, Hearts, Stars, Shock)
+    const questionVal = options.emotionQuestionMark ?? 0;
+    setParam("ParamQuestionMark", "PARAM_QUESTION_MARK", questionVal);
+    setParam("ParamQuestion", "PARAM_QUESTION", questionVal);
+    setParam("ParamHatena", "PARAM_HATENA", questionVal);
+    setPart("PartQuestionMark", "PART_QUESTION_MARK", questionVal);
+    setPart("PartQuestion", "PART_QUESTION", questionVal);
+    setPart("PartHatena", "PART_HATENA", questionVal);
+
+    const sweatVal = options.emotionSweat ?? 0;
+    setParam("ParamSweat", "PARAM_SWEAT", sweatVal);
+    setParam("ParamAse", "PARAM_ASE", sweatVal);
+    setPart("PartSweat", "PART_SWEAT", sweatVal);
+    setPart("PartAse", "PART_ASE", sweatVal);
+
+    const angerVal = options.emotionAnger ?? 0;
+    setParam("ParamAnger", "PARAM_ANGER", angerVal);
+    setParam("ParamAngry", "PARAM_ANGRY", angerVal);
+    setParam("ParamIkari", "PARAM_IKARI", angerVal);
+    setParam("ParamVein", "PARAM_VEIN", angerVal);
+    setPart("PartAnger", "PART_ANGER", angerVal);
+    setPart("PartIkari", "PART_IKARI", angerVal);
+
+    const heartVal = options.emotionHeartEyes ?? 0;
+    setParam("ParamHeartEyes", "PARAM_HEART_EYES", heartVal);
+    setParam("ParamHeartEye", "PARAM_HEART_EYE", heartVal);
+    setParam("ParamHeart", "PARAM_HEART", heartVal);
+    setPart("PartHeartEyes", "PART_HEART_EYES", heartVal);
+
+    const starVal = options.emotionStarEyes ?? 0;
+    setParam("ParamStarEyes", "PARAM_STAR_EYES", starVal);
+    setParam("ParamStarEye", "PARAM_STAR_EYE", starVal);
+    setParam("ParamKira", "PARAM_KIRA", starVal);
+    setPart("PartStarEyes", "PART_STAR_EYES", starVal);
+
+    const exclVal = options.emotionExclamation ?? 0;
+    setParam("ParamExclamation", "PARAM_EXCLAMATION", exclVal);
+    setParam("ParamBikkuri", "PARAM_BIKKURI", exclVal);
+    setParam("ParamShock", "PARAM_SHOCK", exclVal);
+    setPart("PartExclamation", "PART_EXCLAMATION", exclVal);
+
+    const darkVal = options.emotionDarkFace ?? 0;
+    setParam("ParamDarkFace", "PARAM_DARK_FACE", darkVal);
+    setParam("ParamShadow", "PARAM_SHADOW", darkVal);
+    setPart("PartDarkFace", "PART_DARK_FACE", darkVal);
   }
 
   // Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)

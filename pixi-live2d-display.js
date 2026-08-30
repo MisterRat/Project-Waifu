@@ -173,9 +173,6 @@ var __async = (__this, __arguments, generator) => {
         if (!(index > -1 && index < this.definitions.length)) {
           return false;
         }
-        if (index === this.expressions.indexOf(this.currentExpression)) {
-          return false;
-        }
         this.reserveExpressionIndex = index;
         const expression = yield this.loadExpression(index);
         if (!expression || this.reserveExpressionIndex !== index) {
@@ -2790,6 +2787,7 @@ var __async = (__this, __arguments, generator) => {
     constructor() {
       super();
       this._parameters = [];
+      this._parts = [];
     }
     static create(json) {
       const expression = new CubismExpressionMotion();
@@ -2819,6 +2817,27 @@ var __async = (__this, __arguments, generator) => {
         };
         expression._parameters.push(item);
       }
+      const parts = json.Parts || json.parts || [];
+      for (let i = 0; i < parts.length; ++i) {
+        const part = parts[i];
+        const partId = part.Id || part.id || part.ID || part.PartId;
+        if (!partId) continue;
+        const value = part.Value !== void 0 ? part.Value : (part.value !== void 0 ? part.value : (part.val !== void 0 ? part.val : 1));
+        let blendType;
+        const blendStr = String(part.Blend || part.blend || part.calc || part.calcType || part.Type || part.type || "").toLowerCase();
+        if (blendStr === "multiply" || blendStr === "mult" || part.Blend === 1) {
+          blendType = ExpressionBlendType.ExpressionBlendType_Multiply;
+        } else if (blendStr === "overwrite" || blendStr === "set" || part.Blend === 2) {
+          blendType = ExpressionBlendType.ExpressionBlendType_Overwrite;
+        } else {
+          blendType = ExpressionBlendType.ExpressionBlendType_Add;
+        }
+        expression._parts.push({
+          partId,
+          blendType,
+          value
+        });
+      }
       return expression;
     }
     doUpdateParameters(model, userTimeSeconds, weight, motionQueueEntry) {
@@ -2843,6 +2862,12 @@ var __async = (__this, __arguments, generator) => {
             }
             break;
           }
+        }
+      }
+      for (let i = 0; i < this._parts.length; ++i) {
+        const part = this._parts[i];
+        if (typeof model.setPartOpacityById === "function") {
+          model.setPartOpacityById(part.partId, part.value * weight);
         }
       }
     }
