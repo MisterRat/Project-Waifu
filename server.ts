@@ -785,17 +785,23 @@ async function startServer() {
     const modelFolderPath = path.join(MODELS_DIR, modelId);
     const checkModelJson = (dir: string): boolean => {
       if (!fs.existsSync(dir)) return false;
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (checkModelJson(full)) return true;
-        } else if (entry.isFile()) {
-          const lower = entry.name.toLowerCase();
-          if (lower.endsWith(".model3.json") || lower.endsWith(".model.json")) return true;
+      let hasModelJson = false;
+      let hasMoc = false;
+      const scanDir = (currentDir: string) => {
+        const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          const full = path.join(currentDir, entry.name);
+          if (entry.isDirectory()) {
+            scanDir(full);
+          } else if (entry.isFile()) {
+            const lower = entry.name.toLowerCase();
+            if (lower.endsWith(".model3.json") || lower.endsWith(".model.json")) hasModelJson = true;
+            if (lower.endsWith(".moc3") || lower.endsWith(".moc")) hasMoc = true;
+          }
         }
-      }
-      return false;
+      };
+      scanDir(dir);
+      return hasModelJson && hasMoc;
     };
 
     if (checkModelJson(modelFolderPath)) {

@@ -1312,8 +1312,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           // 3. Evaluate emotion parameters
           let mouthForm = 0;
           let cheekBlush = 0;
+          let cheekPuff = 0;
           let browLY = 0;
           let browRY = 0;
+          let browLX = 0;
+          let browRX = 0;
           let browLAngle = 0;
           let browRAngle = 0;
           let browLForm = 0;
@@ -1333,43 +1336,64 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           let emotionHeartEyes = 0;
           let emotionStarEyes = 0;
           let emotionDarkFace = 0;
+          let emotionParam2 = 0; // Model-specific Sad mark
+          let emotionParam3 = 0; // Model-specific Angry mark
+          let emotionParam4 = 0; // Model-specific Happy mark
+          let emotionEarRotation = 0;
+          let emotionEarInOut = 0;
+          let emotionEar1 = 0;
+          let emotionEar2 = 0;
+          let emotionEar3 = 0;
+          let emotionTailWag = 1.0;
+          let emotionMouthShrug = 0;
+          let emotionMouthFunnel = 0;
+          let emotionMouthPucker = 0;
+          let emotionMouthX = 0;
 
           switch (emotionRef.current) {
             case "happy":
               mouthForm = 1.0;
-              cheekBlush = 0.4;
-              browLY = 0.35;
-              browRY = 0.35;
-              browLAngle = 0.1;
-              browRAngle = 0.1;
-              browLForm = 0.3;
-              browRForm = 0.3;
-              eyeLOpen = 0.9;
-              eyeROpen = 0.9;
+              cheekBlush = 0.5;
+              browLY = 0.4;
+              browRY = 0.4;
+              browLAngle = 0.15;
+              browRAngle = 0.15;
+              browLForm = 0.4;
+              browRForm = 0.4;
+              eyeLOpen = 0.0; // Eyes smiling closed, works with non-blend-shape
+              eyeROpen = 0.0;
               eyeLSmile = 1.0;
               eyeRSmile = 1.0;
-              eyeBallForm = 0.3;
+              eyeBallForm = 0.4;
+              emotionParam4 = 1.0; // Tamamo Happy mark
+              emotionEarRotation = -0.3;
+              emotionEar1 = 0.4;
+              emotionTailWag = 2.0;
               break;
             case "excited":
               mouthForm = 1.0;
               cheekBlush = 0.85;
-              eyeLOpen = 1.35;
-              eyeROpen = 1.35;
-              eyeLSmile = 0.8;
-              eyeRSmile = 0.8;
+              eyeLOpen = 1.3;
+              eyeROpen = 1.3;
+              eyeLSmile = 0.85;
+              eyeRSmile = 0.85;
               eyeBallForm = 0.5;
               browLY = 0.7;
               browRY = 0.7;
               browLAngle = 0.2;
               browRAngle = 0.2;
-              browLForm = 0.4;
-              browRForm = 0.4;
-              emotionStarEyes = 0.85;
+              browLForm = 0.5;
+              browRForm = 0.5;
+              emotionStarEyes = 0.9;
+              emotionParam4 = 1.0;
+              emotionEarRotation = -0.5;
+              emotionEar1 = 0.6;
+              emotionTailWag = 2.5;
               break;
             case "flirty":
               mouthForm = 0.85;
               cheekBlush = 0.75;
-              eyeLOpen = 0.0;
+              eyeLOpen = 0.0; // Winking eye
               eyeROpen = 1.0;
               eyeLSmile = 1.0;
               eyeRSmile = 0.85;
@@ -1378,12 +1402,16 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRY = 0.15;
               browLAngle = 0.25;
               browRAngle = 0.1;
-              browLForm = 0.2;
-              browRForm = 0.2;
+              browLForm = 0.3;
+              browRForm = 0.3;
               emotionHeartEyes = 1.0;
+              emotionParam4 = 0.7;
+              emotionEarRotation = 0.2;
+              emotionTailWag = 1.5;
               break;
             case "smirk":
               mouthForm = 0.8;
+              emotionMouthX = 0.3;
               cheekBlush = 0.2;
               eyeLOpen = 0.8;
               eyeROpen = 0.65;
@@ -1396,10 +1424,14 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = -0.2;
               browLForm = 0.2;
               browRForm = -0.2;
+              emotionEarRotation = 0.3;
+              emotionEarInOut = -0.2;
+              emotionTailWag = 1.2;
               break;
             case "surprised":
               mouthForm = 0.0;
-              cheekBlush = 0.2;
+              emotionMouthFunnel = 0.6;
+              cheekBlush = 0.1;
               eyeLOpen = 1.45;
               eyeROpen = 1.45;
               eyeLSmile = 0.0;
@@ -1410,16 +1442,20 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browLAngle = 0.0;
               browRAngle = 0.0;
               emotionExclamation = 1.0;
+              emotionEarRotation = -0.6;
+              emotionEar1 = 0.7;
+              emotionTailWag = 0.5;
               break;
             case "thinking":
               mouthForm = 0.1;
+              emotionMouthPucker = 0.3;
               cheekBlush = 0.1;
-              eyeLOpen = 0.8;
+              eyeLOpen = 0.85;
               eyeROpen = 0.85;
               eyeLSmile = 0.0;
               eyeRSmile = 0.0;
               eyeBallForm = 0.0;
-              eyeBallX = 0.35;
+              eyeBallX = 0.4;
               eyeBallY = 0.45;
               browLY = 0.65;
               browRY = -0.35;
@@ -1427,10 +1463,14 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = -0.2;
               browLForm = 0.1;
               browRForm = -0.2;
-              emotionQuestionMark = 0.5;
+              emotionQuestionMark = 0.7;
+              emotionEarRotation = 0.4;
+              emotionEarInOut = -0.3;
+              emotionTailWag = 0.8;
               break;
             case "confused":
               mouthForm = -0.25;
+              emotionMouthShrug = 0.6;
               cheekBlush = 0.15;
               eyeLOpen = 1.15;
               eyeROpen = 0.75;
@@ -1443,16 +1483,20 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = 0.4;
               browLForm = -0.2;
               browRForm = 0.2;
-              emotionQuestionMark = 1.0;
+              emotionQuestionMark = 1.0; // Confused Question Mark Emote!
               emotionSweat = 0.35;
+              emotionEarRotation = 0.45;
+              emotionEarInOut = -0.4;
+              emotionTailWag = 0.7;
               break;
             case "embarrassed":
               mouthForm = -0.3;
               cheekBlush = 1.0;
-              eyeLOpen = 0.7;
-              eyeROpen = 0.7;
-              eyeLSmile = 0.5;
-              eyeRSmile = 0.5;
+              cheekPuff = 0.5;
+              eyeLOpen = 0.65;
+              eyeROpen = 0.65;
+              eyeLSmile = 0.6;
+              eyeRSmile = 0.6;
               eyeBallForm = 0.2;
               eyeBallY = -0.35;
               browLY = -0.4;
@@ -1462,10 +1506,15 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browLForm = -0.4;
               browRForm = -0.4;
               emotionSweat = 0.6;
+              emotionParam4 = 0.5;
+              emotionEarRotation = 0.5;
+              emotionEarInOut = 0.3;
+              emotionTailWag = 1.6;
               break;
             case "tipsy":
               mouthForm = 0.6;
               cheekBlush = 0.95;
+              cheekPuff = 0.3;
               eyeLOpen = 0.6;
               eyeROpen = 0.65;
               eyeLSmile = 0.7;
@@ -1477,6 +1526,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = -0.3;
               browLForm = -0.3;
               browRForm = -0.3;
+              emotionParam4 = 0.6;
+              emotionEarRotation = 0.3;
+              emotionTailWag = 1.4;
               break;
             case "tired":
               mouthForm = -0.4;
@@ -1493,6 +1545,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browLForm = -0.3;
               browRForm = -0.3;
               emotionSweat = 0.2;
+              emotionEarRotation = 0.5;
+              emotionEarInOut = 0.4;
+              emotionTailWag = 0.3;
               break;
             case "sad":
               mouthForm = -1.0;
@@ -1508,13 +1563,17 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRAngle = -0.6;
               browLForm = -0.6;
               browRForm = -0.6;
-              emotionTear = 0.2;
+              emotionTear = 1.0;
+              emotionParam2 = 1.0; // Tamamo Sad Tear mark
+              emotionEarRotation = 0.55;
+              emotionEarInOut = 0.35;
+              emotionTailWag = 0.4;
               break;
             case "crying":
               mouthForm = -0.95;
               cheekBlush = 0.6;
-              eyeLOpen = 0.45;
-              eyeROpen = 0.45;
+              eyeLOpen = 0.35;
+              eyeROpen = 0.35;
               eyeLSmile = 0.0;
               eyeRSmile = 0.0;
               eyeBallForm = -0.6;
@@ -1525,12 +1584,16 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browLForm = -0.7;
               browRForm = -0.7;
               emotionTear = 1.0;
+              emotionParam2 = 1.0; // Tamamo Sad Tear mark
+              emotionEarRotation = 0.6;
+              emotionEarInOut = 0.4;
+              emotionTailWag = 0.3;
               break;
             case "scared":
               mouthForm = -0.6;
               cheekBlush = 0.0;
-              eyeLOpen = 1.5;
-              eyeROpen = 1.5;
+              eyeLOpen = 1.45;
+              eyeROpen = 1.45;
               eyeLSmile = 0.0;
               eyeRSmile = 0.0;
               eyeBallForm = -0.7;
@@ -1542,6 +1605,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRForm = -0.5;
               emotionSweat = 0.85;
               emotionTear = 0.3;
+              emotionEarRotation = 0.6;
+              emotionEarInOut = 0.5;
+              emotionTailWag = 0.2;
               break;
             case "angry":
               mouthForm = -0.85;
@@ -1558,6 +1624,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browLForm = -0.6;
               browRForm = -0.6;
               emotionAnger = 1.0;
+              emotionParam3 = 1.0; // Tamamo Angry mark
+              emotionEarRotation = 0.65;
+              emotionEarInOut = -0.4;
+              emotionTailWag = 1.8;
               break;
             case "evil":
               mouthForm = 0.75;
@@ -1575,6 +1645,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browRForm = -0.5;
               emotionAnger = 0.4;
               emotionDarkFace = 0.8;
+              emotionParam3 = 0.7;
+              emotionEarRotation = 0.5;
+              emotionTailWag = 1.3;
               break;
             default:
               mouthForm = 0.0;
@@ -1591,6 +1664,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               browLForm = 0.0;
               browRForm = 0.0;
               emotionTear = 0.0;
+              emotionTailWag = 1.0;
               break;
           }
 
@@ -1618,6 +1692,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               hasNativeExpressions: hasNativeExprs,
               emotionMouthForm: mouthForm,
               emotionCheek: cheekBlush,
+              emotionCheekPuff: cheekPuff,
               emotionEyeLOpen: eyeLOpen,
               emotionEyeROpen: eyeROpen,
               emotionEyeLSmile: eyeLSmile,
@@ -1627,6 +1702,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               emotionEyeBallY: eyeBallY,
               emotionBrowLY: browLY,
               emotionBrowRY: browRY,
+              emotionBrowLX: browLX,
+              emotionBrowRX: browRX,
               emotionBrowLAngle: browLAngle,
               emotionBrowRAngle: browRAngle,
               emotionBrowLForm: browLForm,
@@ -1639,6 +1716,19 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               emotionHeartEyes,
               emotionStarEyes,
               emotionDarkFace,
+              emotionParam2,
+              emotionParam3,
+              emotionParam4,
+              emotionEarRotation,
+              emotionEarInOut,
+              emotionEar1,
+              emotionEar2,
+              emotionEar3,
+              emotionTailWag,
+              emotionMouthShrug,
+              emotionMouthFunnel,
+              emotionMouthPucker,
+              emotionMouthX,
               motionAngleX,
               motionAngleY,
               motionAngleZ,
@@ -2148,6 +2238,48 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         {/* Background Radial Glow */}
         <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-violet-500 via-transparent to-transparent"></div>
+
+        {/* Floating Emotion Emote Overlay (e.g. Question mark for Confused, Anger mark, Hearts, Sweat, Sparkles) */}
+        {emotion && emotion !== "neutral" && (
+          <div
+            id="avatar-emotion-emote-badge"
+            className="absolute top-6 right-8 sm:right-12 z-20 pointer-events-none transition-all duration-300 animate-bounce flex items-center justify-center"
+          >
+            <div className="text-3xl sm:text-4xl filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.7)] select-none transform hover:scale-110 transition-transform">
+              {emotion === "confused"
+                ? "❓"
+                : emotion === "thinking"
+                ? "💭"
+                : emotion === "angry"
+                ? "💢"
+                : emotion === "evil"
+                ? "😈"
+                : emotion === "happy"
+                ? "🌸"
+                : emotion === "excited"
+                ? "✨"
+                : emotion === "flirty"
+                ? "💖"
+                : emotion === "smirk"
+                ? "😏"
+                : emotion === "surprised"
+                ? "❗"
+                : emotion === "scared"
+                ? "😱"
+                : emotion === "sad"
+                ? "💧"
+                : emotion === "crying"
+                ? "😭"
+                : emotion === "embarrassed"
+                ? "😳"
+                : emotion === "tipsy"
+                ? "🍶"
+                : emotion === "tired"
+                ? "💤"
+                : ""}
+            </div>
+          </div>
+        )}
 
 
         {/* Live2D Error / Fallback Badge */}

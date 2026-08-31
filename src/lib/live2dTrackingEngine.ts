@@ -39,6 +39,7 @@ export interface ParameterUpdateOptions {
   hasNativeExpressions?: boolean; // when true, preserves native .exp3.json parameters
   emotionMouthForm?: number;
   emotionCheek?: number;
+  emotionCheekPuff?: number;
   emotionEyeLOpen?: number;
   emotionEyeROpen?: number;
   emotionEyeLSmile?: number;
@@ -48,6 +49,8 @@ export interface ParameterUpdateOptions {
   emotionEyeBallY?: number;
   emotionBrowLY?: number;
   emotionBrowRY?: number;
+  emotionBrowLX?: number;
+  emotionBrowRX?: number;
   emotionBrowAngle?: number;
   emotionBrowLAngle?: number;
   emotionBrowRAngle?: number;
@@ -61,6 +64,19 @@ export interface ParameterUpdateOptions {
   emotionHeartEyes?: number;
   emotionStarEyes?: number;
   emotionDarkFace?: number;
+  emotionParam2?: number; // Model specific Sad mark
+  emotionParam3?: number; // Model specific Angry mark
+  emotionParam4?: number; // Model specific Happy mark
+  emotionEarRotation?: number;
+  emotionEarInOut?: number;
+  emotionEar1?: number;
+  emotionEar2?: number;
+  emotionEar3?: number;
+  emotionTailWag?: number;
+  emotionMouthShrug?: number;
+  emotionMouthFunnel?: number;
+  emotionMouthPucker?: number;
+  emotionMouthX?: number;
   motionAngleX?: number;
   motionAngleY?: number;
   motionAngleZ?: number;
@@ -309,7 +325,7 @@ export function applyLive2DMultiJointKinematics(
       setParam("ParamMouthE", "PARAM_MOUTH_E", 0);
       setParam("ParamMouthO", "PARAM_MOUTH_O", 0);
     }
-  } else if (!options.hasNativeExpressions) {
+  } else {
     setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
     setParam("ParamMouthA", "PARAM_MOUTH_A", 0);
     setParam("ParamMouthI", "PARAM_MOUTH_I", 0);
@@ -318,73 +334,134 @@ export function applyLive2DMultiJointKinematics(
     setParam("ParamMouthO", "PARAM_MOUTH_O", 0);
   }
 
-  // If the model does not have native .exp3.json expression files, apply synthetic procedural emotion curves
-  if (!options.hasNativeExpressions) {
-    if (!isSpeaking && finalMouthOpen <= 0.05) {
-      setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
-    }
-    setParam("ParamCheek", "PARAM_CHEEK", emotionCheek);
-    setParam("ParamCheekBlush", "PARAM_CHEEK_BLUSH", emotionCheek);
-    setParam("ParamBlush", "PARAM_BLUSH", emotionCheek);
-    setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", emotionEyeLOpen);
-    setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", emotionEyeROpen);
-    setParam("ParamEyeLSmile", "PARAM_EYE_L_SMILE", options.emotionEyeLSmile ?? 0);
-    setParam("ParamEyeRSmile", "PARAM_EYE_R_SMILE", options.emotionEyeRSmile ?? 0);
-    setParam("ParamEyeBallForm", "PARAM_EYE_BALL_FORM", options.emotionEyeBallForm ?? 0);
-    setParam("ParamBrowLY", "PARAM_BROW_L_Y", emotionBrowLY);
-    setParam("ParamBrowRY", "PARAM_BROW_R_Y", emotionBrowRY);
-    setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", options.emotionBrowLAngle ?? options.emotionBrowAngle ?? 0);
-    setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", options.emotionBrowRAngle ?? options.emotionBrowAngle ?? 0);
-    setParam("ParamBrowLForm", "PARAM_BROW_L_FORM", options.emotionBrowLForm ?? 0);
-    setParam("ParamBrowRForm", "PARAM_BROW_R_FORM", options.emotionBrowRForm ?? 0);
-    setParam("ParamTear", "PARAM_TEAR", options.emotionTear ?? 0);
-    setPart("PartTear", "PART_TEAR", options.emotionTear ?? 0);
+  // Set Expressive Mouth Morphs (MouthShrug, MouthFunnel, MouthPucker, MouthX)
+  if (options.emotionMouthShrug !== undefined) {
+    setParam("MouthShrug", "MOUTH_SHRUG", options.emotionMouthShrug);
+  }
+  if (options.emotionMouthFunnel !== undefined) {
+    setParam("MouthFunnel", "MOUTH_FUNNEL", options.emotionMouthFunnel);
+  }
+  if (options.emotionMouthPucker !== undefined) {
+    setParam("MouthPucker", "MOUTH_PUCKER", options.emotionMouthPucker);
+  }
+  if (options.emotionMouthX !== undefined) {
+    setParam("MouthX", "MOUTH_X", options.emotionMouthX);
+  }
 
-    // Emote marks / overlays (Question mark, Sweat, Anger, Hearts, Stars, Shock)
-    const questionVal = options.emotionQuestionMark ?? 0;
-    setParam("ParamQuestionMark", "PARAM_QUESTION_MARK", questionVal);
-    setParam("ParamQuestion", "PARAM_QUESTION", questionVal);
-    setParam("ParamHatena", "PARAM_HATENA", questionVal);
-    setPart("PartQuestionMark", "PART_QUESTION_MARK", questionVal);
-    setPart("PartQuestion", "PART_QUESTION", questionVal);
-    setPart("PartHatena", "PART_HATENA", questionVal);
+  // Cheek & Blush
+  setParam("ParamCheek", "PARAM_CHEEK", emotionCheek);
+  setParam("ParamCheekBlush", "PARAM_CHEEK_BLUSH", emotionCheek);
+  setParam("ParamBlush", "PARAM_BLUSH", emotionCheek);
+  if (options.emotionCheekPuff !== undefined) {
+    setParam("CheekPuff", "CHEEK_PUFF", options.emotionCheekPuff);
+  }
 
-    const sweatVal = options.emotionSweat ?? 0;
-    setParam("ParamSweat", "PARAM_SWEAT", sweatVal);
-    setParam("ParamAse", "PARAM_ASE", sweatVal);
-    setPart("PartSweat", "PART_SWEAT", sweatVal);
-    setPart("PartAse", "PART_ASE", sweatVal);
+  // Eyes (clamped safely to handle both blend shape Add and direct non-blend shape parameter values)
+  if (options.emotionEyeLOpen !== undefined) {
+    const clampedEyeL = Math.max(0.0, Math.min(1.5, options.emotionEyeLOpen));
+    setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", clampedEyeL);
+  }
+  if (options.emotionEyeROpen !== undefined) {
+    const clampedEyeR = Math.max(0.0, Math.min(1.5, options.emotionEyeROpen));
+    setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", clampedEyeR);
+  }
+  setParam("ParamEyeLSmile", "PARAM_EYE_L_SMILE", options.emotionEyeLSmile ?? 0);
+  setParam("ParamEyeRSmile", "PARAM_EYE_R_SMILE", options.emotionEyeRSmile ?? 0);
+  setParam("ParamEyeBallForm", "PARAM_EYE_BALL_FORM", options.emotionEyeBallForm ?? 0);
 
-    const angerVal = options.emotionAnger ?? 0;
-    setParam("ParamAnger", "PARAM_ANGER", angerVal);
-    setParam("ParamAngry", "PARAM_ANGRY", angerVal);
-    setParam("ParamIkari", "PARAM_IKARI", angerVal);
-    setParam("ParamVein", "PARAM_VEIN", angerVal);
-    setPart("PartAnger", "PART_ANGER", angerVal);
-    setPart("PartIkari", "PART_IKARI", angerVal);
+  // Eyebrows
+  setParam("ParamBrowLY", "PARAM_BROW_L_Y", emotionBrowLY);
+  setParam("ParamBrowRY", "PARAM_BROW_R_Y", emotionBrowRY);
+  setParam("ParamBrowLX", "PARAM_BROW_L_X", options.emotionBrowLX ?? 0);
+  setParam("ParamBrowRX", "PARAM_BROW_R_X", options.emotionBrowRX ?? 0);
+  setParam("ParamBrowLAngle", "PARAM_BROW_L_ANGLE", options.emotionBrowLAngle ?? options.emotionBrowAngle ?? 0);
+  setParam("ParamBrowRAngle", "PARAM_BROW_R_ANGLE", options.emotionBrowRAngle ?? options.emotionBrowAngle ?? 0);
+  setParam("ParamBrowLForm", "PARAM_BROW_L_FORM", options.emotionBrowLForm ?? 0);
+  setParam("ParamBrowRForm", "PARAM_BROW_R_FORM", options.emotionBrowRForm ?? 0);
 
-    const heartVal = options.emotionHeartEyes ?? 0;
-    setParam("ParamHeartEyes", "PARAM_HEART_EYES", heartVal);
-    setParam("ParamHeartEye", "PARAM_HEART_EYE", heartVal);
-    setParam("ParamHeart", "PARAM_HEART", heartVal);
-    setPart("PartHeartEyes", "PART_HEART_EYES", heartVal);
+  // Model-specific Direct Emote Marks (Tamamo Param2: Sad, Param3: Angry, Param4: Happy)
+  if (options.emotionParam2 !== undefined) {
+    setParam("Param2", "PARAM_2", options.emotionParam2);
+  }
+  if (options.emotionParam3 !== undefined) {
+    setParam("Param3", "PARAM_3", options.emotionParam3);
+  }
+  if (options.emotionParam4 !== undefined) {
+    setParam("Param4", "PARAM_4", options.emotionParam4);
+  }
 
-    const starVal = options.emotionStarEyes ?? 0;
-    setParam("ParamStarEyes", "PARAM_STAR_EYES", starVal);
-    setParam("ParamStarEye", "PARAM_STAR_EYE", starVal);
-    setParam("ParamKira", "PARAM_KIRA", starVal);
-    setPart("PartStarEyes", "PART_STAR_EYES", starVal);
+  // Tears & Overlays
+  setParam("ParamTear", "PARAM_TEAR", options.emotionTear ?? 0);
+  setPart("PartTear", "PART_TEAR", options.emotionTear ?? 0);
 
-    const exclVal = options.emotionExclamation ?? 0;
-    setParam("ParamExclamation", "PARAM_EXCLAMATION", exclVal);
-    setParam("ParamBikkuri", "PARAM_BIKKURI", exclVal);
-    setParam("ParamShock", "PARAM_SHOCK", exclVal);
-    setPart("PartExclamation", "PART_EXCLAMATION", exclVal);
+  // Emote marks / overlays (Question mark, Sweat, Anger, Hearts, Stars, Shock, Shadow)
+  const questionVal逃 = options.emotionQuestionMark ?? 0;
+  setParam("ParamQuestionMark", "PARAM_QUESTION_MARK", questionVal逃);
+  setParam("ParamQuestion", "PARAM_QUESTION", questionVal逃);
+  setParam("ParamHatena", "PARAM_HATENA", questionVal逃);
+  setPart("PartQuestionMark", "PART_QUESTION_MARK", questionVal逃);
+  setPart("PartQuestion", "PART_QUESTION", questionVal逃);
+  setPart("PartHatena", "PART_HATENA", questionVal逃);
 
-    const darkVal = options.emotionDarkFace ?? 0;
-    setParam("ParamDarkFace", "PARAM_DARK_FACE", darkVal);
-    setParam("ParamShadow", "PARAM_SHADOW", darkVal);
-    setPart("PartDarkFace", "PART_DARK_FACE", darkVal);
+  const sweatVal = options.emotionSweat ?? 0;
+  setParam("ParamSweat", "PARAM_SWEAT", sweatVal);
+  setParam("ParamAse", "PARAM_ASE", sweatVal);
+  setPart("PartSweat", "PART_SWEAT", sweatVal);
+  setPart("PartAse", "PART_ASE", sweatVal);
+
+  const angerVal = options.emotionAnger ?? 0;
+  setParam("ParamAnger", "PARAM_ANGER", angerVal);
+  setParam("ParamAngry", "PARAM_ANGRY", angerVal);
+  setParam("ParamIkari", "PARAM_IKARI", angerVal);
+  setParam("ParamVein", "PARAM_VEIN", angerVal);
+  setPart("PartAnger", "PART_ANGER", angerVal);
+  setPart("PartIkari", "PART_IKARI", angerVal);
+
+  const heartVal = options.emotionHeartEyes ?? 0;
+  setParam("ParamHeartEyes", "PARAM_HEART_EYES", heartVal);
+  setParam("ParamHeartEye", "PARAM_HEART_EYE", heartVal);
+  setParam("ParamHeart", "PARAM_HEART", heartVal);
+  setPart("PartHeartEyes", "PART_HEART_EYES", heartVal);
+
+  const starVal生气 = options.emotionStarEyes ?? 0;
+  setParam("ParamStarEyes", "PARAM_STAR_EYES", starVal生气);
+  setParam("ParamStarEye", "PARAM_STAR_EYE", starVal生气);
+  setParam("ParamKira", "PARAM_KIRA", starVal生气);
+  setPart("PartStarEyes", "PART_STAR_EYES", starVal生气);
+
+  const exclVal = options.emotionExclamation ?? 0;
+  setParam("ParamExclamation", "PARAM_EXCLAMATION", exclVal);
+  setParam("ParamBikkuri", "PARAM_BIKKURI", exclVal);
+  setParam("ParamShock", "PARAM_SHOCK", exclVal);
+  setPart("PartExclamation", "PART_EXCLAMATION", exclVal);
+
+  const darkVal = options.emotionDarkFace ?? 0;
+  setParam("ParamDarkFace", "PARAM_DARK_FACE", darkVal);
+  setParam("ParamShadow", "PARAM_SHADOW", darkVal);
+  setPart("PartDarkFace", "PART_DARK_FACE", darkVal);
+
+  // Fox Ears Kinematics (Param34: Rotation, Param35: In/Out, Param36..38: Ear 1..3)
+  const earTwitch = Math.sin((timeMs / 1000) * 3.5) * 0.1;
+  const earRot = (options.emotionEarRotation ?? 0) + earTwitch * 0.5;
+  const earInOut = options.emotionEarInOut ?? 0;
+  const ear1 = (options.emotionEar1 ?? 0) + earTwitch;
+  const ear2 = options.emotionEar2 ?? 0;
+  const ear3 = options.emotionEar3 ?? 0;
+
+  setParam("Param34", "PARAM_34", earRot);
+  setParam("Param35", "PARAM_35", earInOut);
+  setParam("Param36", "PARAM_36", ear1);
+  setParam("Param37", "PARAM_37", ear2);
+  setParam("Param38", "PARAM_38", ear3);
+
+  // Fox Tail Wagging Kinematics (Param_Angle_Rotation_1_TAIL2 .. 9)
+  const tailSpeed = (options.emotionTailWag ?? 1.0) * 3.0;
+  const tailBaseAmp = Math.sin((timeMs / 1000) * tailSpeed);
+  for (let t = 1; t <= 9; t++) {
+    const tailParamId = `Param_Angle_Rotation_${t}_TAIL2`;
+    const lagPhase = t * 0.35;
+    const tailVal = Math.sin((timeMs / 1000) * tailSpeed - lagPhase) * 15.0;
+    setParam(tailParamId, tailParamId, tailVal);
   }
 
   // Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)
