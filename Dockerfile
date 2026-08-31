@@ -3,16 +3,16 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Copy dependency manifests
-COPY package*.json ./
+# Copy dependency manifests first for layer caching
+COPY package.json package-lock.json* ./
 
-# Install all dependencies for build
-RUN npm install
+# Install dependencies needed for compilation (including devDependencies like vite & esbuild)
+RUN npm ci || npm install
 
-# Copy source code
+# Copy source code and config files
 COPY . .
 
-# Build Vite SPA and Express server bundle
+# Build Vite frontend and Express server bundle
 RUN npm run build
 
 # Production runtime stage
@@ -23,15 +23,16 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Copy package manifests and install runtime dependencies
-COPY package*.json ./
-RUN npm install --omit=dev
+# Copy package manifests and install only production dependencies
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev || npm install --omit=dev
 
-# Copy compiled distribution bundle and assets
+# Copy compiled distribution bundle and static assets from builder stage
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/assets ./assets
+COPY --from=builder /app/public ./public
 
-# Create data directory for SQLite database and Live2D model storage
+# Create data directory for SQLite database and Live2D models
 RUN mkdir -p /app/data
 
 EXPOSE 3000
@@ -40,6 +41,6 @@ EXPOSE 3000
 VOLUME ["/app/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => { if (r.statusCode !== 200) process.exit(1); })"
+  CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3000) + '/api/health', (r) => { if (r.statusCode !== 200) process.exit(1); })"
 
 CMD ["node", "dist/server.cjs"]
