@@ -1,13 +1,13 @@
 # Multi-stage Dockerfile for Project Waifu
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
-# Copy dependency manifests first for layer caching
-COPY package.json package-lock.json* ./
+# Copy dependency manifests
+COPY package*.json ./
 
-# Install dependencies needed for compilation (including devDependencies like vite & esbuild)
-RUN npm ci || npm install
+# Install dependencies for compilation (including devDependencies)
+RUN npm install
 
 # Copy source code and config files
 COPY . .
@@ -16,7 +16,7 @@ COPY . .
 RUN npm run build
 
 # Production runtime stage
-FROM node:20-slim AS runner
+FROM node:22-slim AS runner
 
 WORKDIR /app
 
@@ -24,8 +24,8 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Copy package manifests and install only production dependencies
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev || npm install --omit=dev
+COPY package*.json ./
+RUN npm install --omit=dev
 
 # Copy compiled distribution bundle and static assets from builder stage
 COPY --from=builder /app/dist ./dist
