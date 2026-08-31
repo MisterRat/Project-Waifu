@@ -1,21 +1,22 @@
 # Multi-stage Dockerfile for Project Waifu
-FROM node:22-slim AS builder
+# Use $BUILDPLATFORM so the build stage runs natively on the builder host (fast, no QEMU emulation issues with Rollup/Vite)
+FROM --platform=$BUILDPLATFORM node:22-slim AS builder
 
 WORKDIR /app
 
-# Copy dependency manifests
-COPY package*.json ./
+# Copy package manifest
+COPY package.json ./
 
-# Install dependencies for compilation (including devDependencies)
+# Install all dependencies for compiling the frontend and server bundle
 RUN npm install
 
-# Copy source code and config files
+# Copy application source code and configurations
 COPY . .
 
-# Build Vite frontend and Express server bundle
+# Build Vite frontend bundle and esbuild server bundle
 RUN npm run build
 
-# Production runtime stage
+# Production runtime stage (built for the target platform: amd64 / arm64)
 FROM node:22-slim AS runner
 
 WORKDIR /app
@@ -23,11 +24,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Copy package manifests and install only production dependencies
-COPY package*.json ./
+# Copy package manifest and install only production dependencies
+COPY package.json ./
 RUN npm install --omit=dev
 
-# Copy compiled distribution bundle and static assets from builder stage
+# Copy compiled distribution bundles and static assets from builder stage
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/assets ./assets
 COPY --from=builder /app/public ./public
