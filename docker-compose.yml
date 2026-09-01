@@ -2,14 +2,13 @@ version: '3.8'
 
 services:
   project-waifu:
-    image: ghcr.io/misterrat/project-waifu:latest
     build:
       context: .
       dockerfile: Dockerfile
     container_name: project-waifu
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3020:3000"
     volumes:
       - waifu_data:/app/data
     environment:
@@ -20,4 +19,3 @@ services:
 
 volumes:
   waifu_data:
-    name: project_waifu_data

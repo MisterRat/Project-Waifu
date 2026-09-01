@@ -24,62 +24,45 @@ An interactive, customizable Web-based AI Companion application featuring **Live
 
 ---
 
-## 🚀 How to Deploy with Portainer
+## 🚀 How to Deploy with Portainer (From GitHub)
 
-You can deploy Project Waifu in Portainer using either **Automated Pre-built Container Images** (via GitHub Container Registry) or by deploying directly from the **Git Repository**.
+If you have never deployed an app using Portainer before, follow this simple step-by-step guide.
 
-### 🌟 Method 1: Pull Pre-built Image via Portainer Stack (Recommended & Fastest)
+### Prerequisites
+- A running server with **Docker** and **Portainer** installed.
+- Your copy of this repository hosted on **GitHub** (Public or Private).
 
-GitHub Actions automatically builds and publishes multi-architecture (`linux/amd64` and `linux/arm64`) Docker images on every push to `main`/`master` and tagged release to:
-`ghcr.io/<your-github-username>/project-waifu:latest`
+---
 
-1. Open your **Portainer** dashboard.
-2. Go to **Stacks** > **+ Add stack**.
-3. Select **Web editor** and paste the following `docker-compose.yml`:
-   ```yaml
-   version: '3.8'
+### Step-by-Step Portainer Deployment
 
-   services:
-     project-waifu:
-       image: ghcr.io/misterrat/project-waifu:latest
-       container_name: project-waifu
-       restart: unless-stopped
-       ports:
-         - "3000:3000"
-       volumes:
-         - waifu_data:/app/data
-       environment:
-         - NODE_ENV=production
-         - PORT=3000
-       extra_hosts:
-         - "host.docker.internal:host-gateway"
+1. **Log in to Portainer**
+   Open your Portainer dashboard (e.g., `https://your-server-ip:9443`).
 
-   volumes:
-     waifu_data:
-       name: project_waifu_data
+2. **Navigate to Stacks**
+   - Select your environment (usually named **primary** or **local**).
+   - Click on **Stacks** in the left sidebar menu.
+   - Click the **+ Add stack** button in the top right.
+
+3. **Configure the Stack**
+   - **Name**: Enter a name for your stack (e.g., `project-waifu`).
+   - **Build method**: Click on **Repository**.
+
+4. **Repository Settings**
+   - **Repository URL**: `https://github.com/MisterRat/Project-Waifu.git`
+   - **Repository reference**: Enter `refs/heads/main` (or `main`).
+   - **Compose path**: Ensure `docker-compose.yml` is specified.
+   *(If your repository is private, enable **Authentication** and enter your GitHub username and Personal Access Token (PAT)).*
+
+5. **Deploy the Stack**
+   - Click **Deploy the stack** at the bottom of the page.
+   - Portainer will clone the GitHub repository, build the Docker image, and launch the container.
+
+6. **Access the App**
+   Once the stack status shows **Healthy** / **Running**, open your browser and navigate to:
+   ```text
+   http://<your-server-ip>:3000
    ```
-4. *(If your GHCR package is private, add your GitHub Registry credentials under Portainer > Registries > Add registry > GitHub Container Registry with a GitHub Personal Access Token).*
-5. Click **Deploy the stack**.
-
----
-
-### 📦 Method 2: Deploy from Git Repository in Portainer
-
-1. Open Portainer > **Stacks** > **+ Add stack**.
-2. Select **Repository**.
-3. Enter your repository URL (e.g. `https://github.com/MisterRat/Project-Waifu.git`).
-4. Set Compose path to `docker-compose.yml`.
-5. Click **Deploy the stack**.
-
----
-
-## 🤖 Automated CI/CD (GitHub Actions)
-
-The repository includes a GitHub Actions workflow (`.github/workflows/docker-publish.yml`) that:
-- **Builds multi-arch images** (`linux/amd64`, `linux/arm64` for x86 servers and Raspberry Pi / Apple Silicon).
-- **Publishes automatically** to GitHub Container Registry (`ghcr.io`) using the built-in repository `GITHUB_TOKEN`.
-- **Tags images** with `latest`, branch names, commit SHAs (`sha-xxxxxxx`), and SemVer release tags (`v1.0.0`).
-- **Can be triggered manually** anytime via **Actions** > **Docker Build & Publish** > **Run workflow**.
 
 ---
 
