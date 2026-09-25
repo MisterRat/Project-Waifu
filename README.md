@@ -1,6 +1,7 @@
 # 🎭 Project Waifu (Live2D AI Companion Console)
 
 An interactive, customizable Web-based AI Companion application featuring **Live2D animated avatars** with automatic horizontal centering on resize/move, **real-time chat with LLMs** (OpenAI-compatible endpoints like OpenWebUI, Ollama, LM Studio, vLLM, OpenAI), **TTS voice synthesis and STT**, full **Persona & Model customization**, and **secure SQLite server-side authentication & settings sync**.
+<img width="1179" height="863" alt="projectwaifu" src="https://github.com/user-attachments/assets/bee23194-9144-409a-99cb-4c965fc95681" />
 
 ---
 
