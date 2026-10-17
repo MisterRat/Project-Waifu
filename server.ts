@@ -256,6 +256,39 @@ async function startServer() {
     return null;
   };
 
+  /**
+   * Read an AI server's reply. Returns parsed JSON; for a streamed (server-sent events)
+   * chat reply, joins the chunks into one standard chat completion; null if it's neither.
+   */
+  const parseUpstreamReply = (raw: string): any | null => {
+    const text = raw.trim();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      // fall through to streamed format
+    }
+    const events = text
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .filter((payload) => payload && payload !== "[DONE]");
+    if (events.length === 0) return null;
+    let content = "";
+    let model: string | undefined;
+    for (const payload of events) {
+      try {
+        const chunk = JSON.parse(payload);
+        model = model || chunk.model;
+        const choice = chunk.choices?.[0];
+        content += choice?.delta?.content ?? choice?.message?.content ?? "";
+      } catch {
+        // ignore malformed chunk
+      }
+    }
+    return { object: "chat.completion", model, choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }] };
+  };
+
   const FORBIDDEN_UPSTREAM = { error: "That server address is not one of the endpoints configured by the System Owner." };
 
   // GET /api/auth/me
@@ -1271,16 +1304,31 @@ async function startServer() {
       };
 
       if (body && (method === "POST" || method === "PUT")) {
-        fetchOptions.body = JSON.stringify(body);
+        // The app reads one complete JSON reply. Some servers (e.g. Open WebUI) stream by
+        // default unless told otherwise, so ask for a non-streamed reply explicitly.
+        const outBody =
+          cleanEndpoint === "/chat/completions" && typeof body === "object" && body.stream === undefined
+            ? { ...body, stream: false }
+            : body;
+        fetchOptions.body = JSON.stringify(outBody);
       }
 
       const response = await fetch(targetUrl, fetchOptions);
-      const data = await response.json().catch(() => ({}));
+      const raw = await response.text();
+      const data = parseUpstreamReply(raw);
 
       if (!response.ok) {
         return res.status(response.status).json({
           error: `OpenWebUI API error (${response.status})`,
-          details: data,
+          details: data ?? raw.slice(0, 500),
+        });
+      }
+
+      if (data === null) {
+        console.warn(`[OpenWebUI Proxy] Non-JSON reply from ${targetUrl}:`, raw.slice(0, 300));
+        return res.status(502).json({
+          error: "The AI server's reply wasn't JSON. Check that the Base URL points at its OpenAI-compatible API (often ending in /v1 or /api).",
+          details: raw.slice(0, 300),
         });
       }
 
