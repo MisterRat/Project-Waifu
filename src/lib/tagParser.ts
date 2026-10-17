@@ -46,7 +46,9 @@ const MOTION_ALIASES: Record<string, MotionType> = {
   wink: "wink", winks: "wink", winking: "wink",
   check_nails: "check_nails", nails: "check_nails",
   jiggle_dance: "jiggle_dance", dance: "jiggle_dance", dances: "jiggle_dance", dancing: "jiggle_dance", jiggle: "jiggle_dance",
-  sigh_tilt: "sigh_tilt", sigh: "sigh_tilt", sighs: "sigh_tilt", sighing: "sigh_tilt", tilt: "sigh_tilt",
+  sigh_tilt: "sigh_tilt", sigh: "sigh_tilt", sighs: "sigh_tilt", sighing: "sigh_tilt",
+  tilt: "tilt", tilts: "tilt", head_tilt: "tilt",
+  tail_wag: "tail_wag", wag: "tail_wag", wags: "tail_wag", wagging: "tail_wag", tail: "tail_wag",
   curious_glance: "curious_glance", glance: "curious_glance", glances: "curious_glance", peek: "curious_glance", peeks: "curious_glance",
   stretch_wave: "stretch_wave", stretch: "stretch_wave", stretches: "stretch_wave", stretching: "stretch_wave",
 };

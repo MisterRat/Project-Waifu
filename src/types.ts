@@ -67,6 +67,8 @@ export type MotionType =
   | "sigh_tilt"
   | "curious_glance"
   | "stretch_wave"
+  | "tilt"
+  | "tail_wag"
   | "none";
 
 export interface ChatMessage {
@@ -142,6 +144,8 @@ export interface WaifuProfile {
   live2dScale?: number;
   live2dX?: number;
   live2dY?: number;
+  /** Stage height (px) live2dScale / live2dY were saved at; older saves assume 420. */
+  live2dRefHeight?: number;
   physicsIntensity?: number;
 }
 

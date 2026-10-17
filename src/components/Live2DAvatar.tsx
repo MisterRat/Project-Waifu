@@ -8,6 +8,9 @@ import {
   TrackingState,
 } from "../lib/live2dTrackingEngine";
 import { logLive2DDiagnostic } from "../lib/live2dDiagnosticLogger";
+import { IdleScheduler } from "../lib/idleScheduler";
+import { motionPose } from "../lib/motionCurves";
+import { emotionFace } from "../lib/emotionFaces";
 import { lipSyncEngine } from "../lib/lipSyncEngine";
 import {
   Sparkles,
@@ -63,6 +66,8 @@ const MOTION_ALIAS_KEYWORDS: Record<string, string[]> = {
   sigh_tilt: ["sigh", "tilt", "troubled", "ため息"],
   curious_glance: ["curious", "glance", "look", "キョロキョロ"],
   stretch_wave: ["stretch", "wave", "伸び"],
+  tilt: ["tilt", "head_tilt", "首かしげ"],
+  tail_wag: ["tail_wag", "tail", "wag", "尻尾"],
 };
 
 interface Live2DAvatarProps {
@@ -82,7 +87,12 @@ interface Live2DAvatarProps {
   initialScale?: number;
   initialX?: number;
   initialY?: number;
-  onTransformChange?: (scale: number, x: number, y: number) => void;
+  /** refHeight: the stage height these values were set at, so framing survives resizes. */
+  onTransformChange?: (scale: number, x: number, y: number, refHeight: number) => void;
+  /** Stage height the saved initialScale / initialY were set at (older saves: 420 px). */
+  initialRefHeight?: number;
+  /** Fill the parent as a full stage: no inner header, no floating drag/resize. */
+  fill?: boolean;
 }
 
 const isMobileDevice = () => {
@@ -113,6 +123,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   initialX,
   initialY,
   onTransformChange,
+  initialRefHeight,
+  fill = false,
 }) => {
   const pixiCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const proceduralCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -121,6 +133,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
   const pixiAppRef = useRef<any>(null);
   const live2dModelRef = useRef<any>(null);
+  // Stage height the model's current scale/y were set for. When the stage grows or
+  // shrinks, scale and y are rescaled by the same ratio so her framing holds.
+  const frameHeightRef = useRef<number>(0);
 
   const isPanningRef = useRef(false);
   const isZoomingRef = useRef(false);
@@ -210,6 +225,16 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const isSpeakingRef = useRef<boolean>(isSpeaking);
   const mouthOpenRatioRef = useRef<number>(0);
   const activeNativeExpressionRef = useRef<string | null>(null);
+  // True while a motion file from the model itself is playing the current gesture.
+  const nativeMotionPlayingRef = useRef(false);
+  // The engine's work for the current frame; run inside the model's update (see patch below).
+  const pendingKinematicsRef = useRef<(() => void) | null>(null);
+  // Parameters animated by the motion file now playing as a gesture (from its .motion3.json).
+  const nativeMotionParamsRef = useRef<Set<string>>(new Set());
+  // The model ships idle loops (motion group "Idle"): they breathe, so the engine doesn't.
+  const hasIdleMotionsRef = useRef(false);
+  // Blink start time (ms); blinks come from the idle scheduler, as in the Waifu Pet.
+  const blinkStartRef = useRef(-1e9);
 
   useEffect(() => {
     physicsIntensityRef.current = physicsIntensity ?? 1.0;
@@ -355,7 +380,19 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           if (Array.isArray(definitions) && definitions.length > 0) {
             const keywords = EMOTION_ALIAS_KEYWORDS[emotion] || [emotion.toLowerCase()];
 
-            for (let i = 0; i < definitions.length; i++) {
+            // An expression named exactly after the emotion wins over keyword guesses
+            // (otherwise "smirk" would pick a model's Evil face via its "evil" keyword).
+            const exactIdx = definitions.findIndex((def: any) => {
+              const nameStr = String(def.name || def.Name || "").toLowerCase();
+              const base = String(def.file || def.File || "").toLowerCase().split("/").pop()?.replace(/\.(exp3|exp)\.json$/i, "") || "";
+              return nameStr === emotion || base === emotion;
+            });
+            if (exactIdx >= 0) {
+              bestIdx = exactIdx;
+              bestDef = definitions[exactIdx];
+            }
+
+            for (let i = 0; i < definitions.length && !bestDef; i++) {
               const def = definitions[i];
               const nameStr = String(def.name || def.Name || "").toLowerCase();
               const fileStr = String(def.file || def.File || "").toLowerCase();
@@ -436,7 +473,118 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
   useEffect(() => {
     isSpeakingRef.current = isSpeaking;
+    lastInteractionAtRef.current = performance.now();
   }, [isSpeaking]);
+
+  // ---------------------------------------------------------------------------
+  // Gaze and idle behavior — same rules as the Waifu Pet desktop app
+  // (renderer/pet.js + renderer/idle.js); keep the two in sync.
+  //  * She looks at the mouse only WHILE IT MOVES (and FOLLOW_HOLD_MS after),
+  //    then returns to looking forward.
+  //  * She looks forward while she is talking.
+  //  * While idle (not talking, nothing happened for 8 s, no reaction playing)
+  //    she glances to the side now and then, fidgets with a small motion, and
+  //    occasionally shows a mild mood that lapses back to neutral.
+  // ---------------------------------------------------------------------------
+  const FOLLOW_HOLD_MS = 450;
+  const IDLE_AFTER_MS = 8000;
+  const MOOD_HOLD_MS = 250 + 5000 + 800; // fade in + hold + fade out, as in the pet
+  // Same fidget list as the Waifu Pet (renderer/pet.js FIDGET_PREFERRED).
+  const IDLE_FIDGETS: MotionType[] = [
+    "stretch_wave", "check_nails", "curious_glance", "sigh_tilt", "tilt", "wave", "nod", "tail_wag", "wink", "jiggle_dance",
+  ];
+  const IDLE_MOODS: EmotionType[] = ["happy", "thinking", "tired", "smirk", "surprised", "confused", "excited"];
+
+  const lastPointerMoveAtRef = useRef(0);
+  const lastInteractionAtRef = useRef(performance.now());
+  const reactionUntilRef = useRef(0);
+  const glanceRef = useRef<{ x: number; y: number; until: number } | null>(null);
+  const idleMoodRef = useRef<EmotionType | null>(null);
+  const onEmotionChangeRef = useRef(onEmotionChange);
+  const onMotionTriggerRef = useRef(onMotionTrigger);
+  onEmotionChangeRef.current = onEmotionChange;
+  onMotionTriggerRef.current = onMotionTrigger;
+
+  /** Where she should look this frame, in -1..1 (0,0 = straight ahead). */
+  const gazeTarget = (now: number): { x: number; y: number } => {
+    const talking = isSpeakingRef.current;
+    if (trackingEngineEnabledRef.current && !talking && now - lastPointerMoveAtRef.current < FOLLOW_HOLD_MS) {
+      return mouseTargetRef.current;
+    }
+    const g = glanceRef.current;
+    if (g && now < g.until && !talking) return { x: g.x, y: g.y };
+    return { x: 0, y: 0 };
+  };
+
+  const markInteraction = () => {
+    lastInteractionAtRef.current = performance.now();
+  };
+
+  useEffect(() => {
+    // A reaction (from chat or idle) blocks idle fidgets until it has played out.
+    if (motion && motion !== "none") reactionUntilRef.current = performance.now() + 5000;
+  }, [motion]);
+
+  useEffect(() => {
+    // Anything other than our own idle mood counts as activity.
+    if (emotion !== idleMoodRef.current) {
+      idleMoodRef.current = null;
+      if (emotion !== "neutral") markInteraction();
+    }
+  }, [emotion]);
+
+  useEffect(() => {
+    const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
+    const idle = new IdleScheduler({
+      now: () => performance.now(),
+      onBlink: () => {
+        blinkStartRef.current = performance.now();
+      },
+      expressionNames: IDLE_MOODS,
+      minExprMs: 60000,
+      maxExprMs: 150000,
+      canIdle: () => {
+        const now = performance.now();
+        return (
+          !isSpeakingRef.current &&
+          !isPanningRef.current &&
+          emotionRef.current === "neutral" &&
+          activeMotionRef.current === "none" &&
+          now - lastInteractionAtRef.current > IDLE_AFTER_MS &&
+          now > reactionUntilRef.current
+        );
+      },
+      onFidget: () => {
+        reactionUntilRef.current = performance.now() + 5000;
+        onMotionTriggerRef.current?.(pick(IDLE_FIDGETS));
+      },
+      onGlance: () => {
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        glanceRef.current = {
+          x: dir * (0.25 + Math.random() * 0.45),
+          y: (Math.random() - 0.4) * 0.5,
+          until: performance.now() + 700 + Math.random() * 900,
+        };
+      },
+      onExpression: (name) => {
+        const mood = name as EmotionType;
+        idleMoodRef.current = mood;
+        onEmotionChangeRef.current?.(mood);
+        setTimeout(() => {
+          if (idleMoodRef.current === mood && emotionRef.current === mood) {
+            idleMoodRef.current = null;
+            onEmotionChangeRef.current?.("neutral");
+          }
+        }, MOOD_HOLD_MS);
+      },
+    });
+    idle.start();
+    const timer = window.setInterval(() => idle.tick(), 100);
+    return () => {
+      idle.stop();
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     mouthOpenRatioRef.current = mouthOpenRatio;
@@ -450,13 +598,17 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         mouseTargetRef.current = { x: 0, y: 0 };
         return;
       }
-      const rect = containerRef.current.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const relX = (e.clientX - centerX) / (rect.width / 2);
-      const relY = (e.clientY - centerY) / (rect.height / 2);
-      const clampedX = Math.max(-1.5, Math.min(1.5, relX));
-      const clampedY = Math.max(-1.5, Math.min(1.5, relY));
+      lastPointerMoveAtRef.current = performance.now();
+      // Measured from her eyes, full deflection ~30% of the screen away (as in the pet).
+      const area = displayAreaRef.current || containerRef.current;
+      const rect = area.getBoundingClientRect();
+      const model = live2dModelRef.current;
+      const eyeX = rect.left + (model ? model.x : rect.width / 2);
+      const eyeY = rect.top + (model ? model.y - model.height * 0.28 : rect.height * 0.35);
+      const rangeX = Math.max(200, window.innerWidth * 0.3);
+      const rangeY = Math.max(200, window.innerHeight * 0.3);
+      const clampedX = Math.max(-1, Math.min(1, (e.clientX - eyeX) / rangeX));
+      const clampedY = Math.max(-1, Math.min(1, (e.clientY - eyeY) / rangeY));
       mouseTargetRef.current = { x: clampedX, y: clampedY };
       setMousePos({ x: Math.max(-1, Math.min(1, clampedX)), y: Math.max(-1, Math.min(1, clampedY)) });
     };
@@ -562,7 +714,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           const availableGroups = motionMgr?.definitions ? Object.keys(motionMgr.definitions) : [];
           
           let targetGroup: string | null = null;
-          if (availableGroups.length > 0) {
+          // An exact group name (e.g. "jiggle_dance" from the shared motion files) wins;
+          // otherwise fall back to keyword matching for other models' naming.
+          const exactGroup = availableGroups.find((g) => g.toLowerCase() === String(motion).toLowerCase());
+          if (exactGroup) {
+            targetGroup = exactGroup;
+          } else if (availableGroups.length > 0) {
             const keywords = MOTION_ALIAS_KEYWORDS[motion] || [motion.toLowerCase()];
             const foundGroup = availableGroups.find((g) =>
               keywords.some((kw) => g.toLowerCase().includes(kw.toLowerCase()) || kw.toLowerCase().includes(g.toLowerCase()))
@@ -572,9 +729,27 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             }
           }
 
+          nativeMotionPlayingRef.current = Boolean(targetGroup);
+          nativeMotionParamsRef.current = new Set();
           if (targetGroup) {
+            // Note which parameters the file animates, so code-made layers (tail wag) step aside.
+            try {
+              const def = motionMgr?.definitions?.[targetGroup]?.[0];
+              const file = def?.File || def?.file;
+              const url = file && model.internalModel?.settings?.resolveURL ? model.internalModel.settings.resolveURL(file) : null;
+              if (url) {
+                fetch(url)
+                  .then((r) => r.json())
+                  .then((json) => {
+                    if (nativeMotionPlayingRef.current) {
+                      nativeMotionParamsRef.current = new Set((json?.Curves || []).map((c: any) => String(c.Id)));
+                    }
+                  })
+                  .catch(() => {});
+              }
+            } catch (e) {}
             if (typeof model.motion === "function") {
-              const res = model.motion(targetGroup);
+              const res = model.motion(targetGroup, 0, 3); // FORCE: a requested gesture interrupts
               logLive2DDiagnostic(
                 "model-file",
                 `[Model File] Executing native motion group "${targetGroup}" for motion "${motion}"`,
@@ -607,6 +782,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     } else if (motion === "none") {
       setActiveMotion("none");
       motionStartTimeRef.current = null;
+      nativeMotionPlayingRef.current = false;
+      nativeMotionParamsRef.current = new Set();
     }
   }, [motion]);
 
@@ -720,6 +897,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   }, [isSpeaking, live2dStatus]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    markInteraction();
     if (e.button === 0) {
       isPanningRef.current = true;
       dragStartRef.current = {
@@ -752,7 +930,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
       live2dModelRef.current.x = containerW / 2;
       live2dModelRef.current.y = dragStartRef.current.modelY + dy;
-      onTransformChange?.(live2dModelRef.current.scale.x, live2dModelRef.current.x, live2dModelRef.current.y);
+      onTransformChange?.(live2dModelRef.current.scale.x, live2dModelRef.current.x, live2dModelRef.current.y, frameHeightRef.current);
     } else if (isZoomingRef.current && live2dModelRef.current) {
       const dy = zoomStartRef.current.y - e.clientY;
       const scaleFactor = Math.pow(1.01, dy);
@@ -761,7 +939,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       live2dModelRef.current.x = containerW / 2;
       live2dModelRef.current.scale.set(newScale);
       setZoomLevel(newScale);
-      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
+      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y, frameHeightRef.current);
     }
   };
 
@@ -783,6 +961,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   // - 1 finger: No intercept. User scrolls the page up/down naturally without being trapped.
   // - 2 fingers: Move (pan) and pinch-zoom the model simultaneously.
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    markInteraction();
     if (e.touches.length === 2) {
       isPanningRef.current = true;
       isZoomingRef.current = true;
@@ -831,7 +1010,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       live2dModelRef.current.x = containerW / 2;
       live2dModelRef.current.y = touchStartRef.current.modelY + dy;
 
-      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
+      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y, frameHeightRef.current);
     }
   };
 
@@ -841,6 +1020,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    markInteraction();
     e.preventDefault();
     if (!live2dModelRef.current) return;
     const currentScale = live2dModelRef.current.scale.x;
@@ -850,7 +1030,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     live2dModelRef.current.x = containerW / 2;
     live2dModelRef.current.scale.set(newScale);
     setZoomLevel(newScale);
-    onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
+    onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y, frameHeightRef.current);
   };
 
   // Live2D PixiJS WebGL Model Mount Engine
@@ -925,8 +1105,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       try {
         if (!containerRef.current || !pixiCanvasRef.current) return;
 
-        const width = containerRef.current.clientWidth || 480;
-        const height = containerRef.current.clientHeight || 520;
+        const stageEl = displayAreaRef.current || containerRef.current;
+        const width = stageEl.clientWidth || 480;
+        const height = stageEl.clientHeight || 520;
 
         if (PIXI.settings && PIXI.ENV && PIXI.ENV.WEBGL_LEGACY) {
           PIXI.settings.PREFER_ENV = PIXI.ENV.WEBGL_LEGACY;
@@ -1224,10 +1405,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           const dt = Math.min(0.05, Math.max(0.001, (app.ticker.deltaMS || 16.6) / 1000));
 
           // 1. Step damped spring tracking state
+          const gaze = gazeTarget(performance.now());
           trackingStateRef.current = stepTrackingState(
             trackingStateRef.current,
-            mouseTargetRef.current.x,
-            mouseTargetRef.current.y,
+            gaze.x,
+            gaze.y,
             dt,
             physicsIntensityRef.current
           );
@@ -1236,6 +1418,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           let motionAngleX = 0;
           let motionAngleY = 0;
           let motionAngleZ = 0;
+          let motionBodyAngleX = 0;
+          let motionBodyAngleY = 0;
           let motionBodyAngleZ = 0;
           let motionMouthOpen = 0;
           let motionEyeLOpenOverride: number | null = null;
@@ -1253,420 +1437,67 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
                 onMotionTrigger("none");
               }
             } else {
-              const progress = elapsed / duration;
-              const pRad = progress * Math.PI;
-
-              switch (activeMotionRef.current) {
-                case "nod":
-                  motionAngleY = Math.sin(progress * Math.PI * 2) * 18;
-                  break;
-                case "shake":
-                  motionAngleX = Math.sin(progress * Math.PI * 3) * 22;
-                  break;
-                case "wave":
-                  motionAngleZ = Math.sin(progress * Math.PI * 2) * 16;
-                  motionBodyAngleZ = Math.sin(progress * Math.PI * 2) * 8;
-                  break;
-                case "bow":
-                  motionAngleY = -Math.sin(pRad) * 25;
-                  break;
-                case "laugh":
-                  motionAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 12;
-                  motionMouthOpen = 0.4;
-                  break;
-                case "wink":
-                  if (progress < 0.75) {
-                    motionEyeLOpenOverride = 0;
-                  }
-                  break;
-                case "check_nails":
-                  motionAngleX = Math.sin(pRad) * 20;
-                  motionAngleY = -Math.sin(pRad) * 16;
-                  motionAngleZ = -Math.sin(pRad) * 12;
-                  motionEyeBallXOverride = Math.sin(pRad) * 0.8;
-                  motionEyeBallYOverride = -Math.sin(pRad) * 0.8;
-                  break;
-                case "jiggle_dance":
-                  motionAngleZ = Math.sin(progress * Math.PI * 6) * 16;
-                  motionBodyAngleZ = Math.sin(progress * Math.PI * 6) * 12;
-                  motionAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 8;
-                  break;
-                case "sigh_tilt":
-                  motionAngleZ = Math.sin(pRad) * 18;
-                  motionAngleY = Math.sin(pRad) * 14;
-                  motionMouthOpen = Math.sin(pRad) * 0.25;
-                  break;
-                case "curious_glance":
-                  motionAngleX = Math.sin(progress * Math.PI * 2) * 22;
-                  motionAngleZ = Math.sin(progress * Math.PI) * 12;
-                  motionEyeBallXOverride = Math.sin(progress * Math.PI * 2) * 0.85;
-                  break;
-                case "stretch_wave":
-                  motionAngleY = Math.sin(pRad) * 18;
-                  motionBodyAngleZ = Math.sin(pRad) * 10;
-                  break;
+              // A motion file shipped with the model plays natively; otherwise the
+              // same curve (src/lib/motionCurves.ts) is applied here.
+              if (!nativeMotionPlayingRef.current) {
+                const pose = motionPose(activeMotionRef.current, elapsed, duration);
+                motionAngleX = pose.angleX;
+                motionAngleY = pose.angleY;
+                motionAngleZ = pose.angleZ;
+                motionBodyAngleX = pose.bodyX;
+                motionBodyAngleY = pose.bodyY;
+                motionBodyAngleZ = pose.bodyZ;
+                motionMouthOpen = pose.mouthOpen;
+                motionEyeLOpenOverride = pose.eyeLOpen;
+                motionEyeBallXOverride = pose.eyeBallX;
+                motionEyeBallYOverride = pose.eyeBallY;
               }
             }
           }
 
           // 3. Evaluate emotion parameters
-          let mouthForm = 0;
-          let cheekBlush = 0;
-          let cheekPuff = 0;
-          let browLY = 0;
-          let browRY = 0;
-          let browLX = 0;
-          let browRX = 0;
-          let browLAngle = 0;
-          let browRAngle = 0;
-          let browLForm = 0;
-          let browRForm = 0;
-          let eyeLOpen = 1.0;
-          let eyeROpen = 1.0;
-          let eyeLSmile = 0;
-          let eyeRSmile = 0;
-          let eyeBallForm = 0;
-          let eyeBallX = 0;
-          let eyeBallY = 0;
-          let emotionTear = 0;
-          let emotionQuestionMark = 0;
-          let emotionExclamation = 0;
-          let emotionSweat = 0;
-          let emotionAnger = 0;
-          let emotionHeartEyes = 0;
-          let emotionStarEyes = 0;
-          let emotionDarkFace = 0;
-          let emotionParam2 = 0; // Model-specific Sad mark
-          let emotionParam3 = 0; // Model-specific Angry mark
-          let emotionParam4 = 0; // Model-specific Happy mark
-          let emotionEarRotation = 0;
-          let emotionEarInOut = 0;
-          let emotionEar1 = 0;
-          let emotionEar2 = 0;
-          let emotionEar3 = 0;
-          let emotionTailWag = 1.0;
-          let emotionMouthShrug = 0;
-          let emotionMouthFunnel = 0;
-          let emotionMouthPucker = 0;
-          let emotionMouthX = 0;
-
-          switch (emotionRef.current) {
-            case "happy":
-              mouthForm = 1.0;
-              cheekBlush = 0.5;
-              browLY = 0.4;
-              browRY = 0.4;
-              browLAngle = 0.15;
-              browRAngle = 0.15;
-              browLForm = 0.4;
-              browRForm = 0.4;
-              eyeLOpen = 0.0; // Eyes smiling closed, works with non-blend-shape
-              eyeROpen = 0.0;
-              eyeLSmile = 1.0;
-              eyeRSmile = 1.0;
-              eyeBallForm = 0.4;
-              emotionParam4 = 1.0; // Tamamo Happy mark
-              emotionEarRotation = -0.3;
-              emotionEar1 = 0.4;
-              emotionTailWag = 2.0;
-              break;
-            case "excited":
-              mouthForm = 1.0;
-              cheekBlush = 0.85;
-              eyeLOpen = 1.3;
-              eyeROpen = 1.3;
-              eyeLSmile = 0.85;
-              eyeRSmile = 0.85;
-              eyeBallForm = 0.5;
-              browLY = 0.7;
-              browRY = 0.7;
-              browLAngle = 0.2;
-              browRAngle = 0.2;
-              browLForm = 0.5;
-              browRForm = 0.5;
-              emotionStarEyes = 0.9;
-              emotionParam4 = 1.0;
-              emotionEarRotation = -0.5;
-              emotionEar1 = 0.6;
-              emotionTailWag = 2.5;
-              break;
-            case "flirty":
-              mouthForm = 0.85;
-              cheekBlush = 0.75;
-              eyeLOpen = 0.0; // Winking eye
-              eyeROpen = 1.0;
-              eyeLSmile = 1.0;
-              eyeRSmile = 0.85;
-              eyeBallForm = 0.4;
-              browLY = 0.35;
-              browRY = 0.15;
-              browLAngle = 0.25;
-              browRAngle = 0.1;
-              browLForm = 0.3;
-              browRForm = 0.3;
-              emotionHeartEyes = 1.0;
-              emotionParam4 = 0.7;
-              emotionEarRotation = 0.2;
-              emotionTailWag = 1.5;
-              break;
-            case "smirk":
-              mouthForm = 0.8;
-              emotionMouthX = 0.3;
-              cheekBlush = 0.2;
-              eyeLOpen = 0.8;
-              eyeROpen = 0.65;
-              eyeLSmile = 0.6;
-              eyeRSmile = 0.3;
-              eyeBallForm = -0.2;
-              browLY = 0.5;
-              browRY = -0.3;
-              browLAngle = 0.35;
-              browRAngle = -0.2;
-              browLForm = 0.2;
-              browRForm = -0.2;
-              emotionEarRotation = 0.3;
-              emotionEarInOut = -0.2;
-              emotionTailWag = 1.2;
-              break;
-            case "surprised":
-              mouthForm = 0.0;
-              emotionMouthFunnel = 0.6;
-              cheekBlush = 0.1;
-              eyeLOpen = 1.45;
-              eyeROpen = 1.45;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.4;
-              browLY = 0.9;
-              browRY = 0.9;
-              browLAngle = 0.0;
-              browRAngle = 0.0;
-              emotionExclamation = 1.0;
-              emotionEarRotation = -0.6;
-              emotionEar1 = 0.7;
-              emotionTailWag = 0.5;
-              break;
-            case "thinking":
-              mouthForm = 0.1;
-              emotionMouthPucker = 0.3;
-              cheekBlush = 0.1;
-              eyeLOpen = 0.85;
-              eyeROpen = 0.85;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = 0.0;
-              eyeBallX = 0.4;
-              eyeBallY = 0.45;
-              browLY = 0.65;
-              browRY = -0.35;
-              browLAngle = 0.3;
-              browRAngle = -0.2;
-              browLForm = 0.1;
-              browRForm = -0.2;
-              emotionQuestionMark = 0.7;
-              emotionEarRotation = 0.4;
-              emotionEarInOut = -0.3;
-              emotionTailWag = 0.8;
-              break;
-            case "confused":
-              mouthForm = -0.25;
-              emotionMouthShrug = 0.6;
-              cheekBlush = 0.15;
-              eyeLOpen = 1.15;
-              eyeROpen = 0.75;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.2;
-              browLY = 0.6;
-              browRY = -0.5;
-              browLAngle = -0.3;
-              browRAngle = 0.4;
-              browLForm = -0.2;
-              browRForm = 0.2;
-              emotionQuestionMark = 1.0; // Confused Question Mark Emote!
-              emotionSweat = 0.35;
-              emotionEarRotation = 0.45;
-              emotionEarInOut = -0.4;
-              emotionTailWag = 0.7;
-              break;
-            case "embarrassed":
-              mouthForm = -0.3;
-              cheekBlush = 1.0;
-              cheekPuff = 0.5;
-              eyeLOpen = 0.65;
-              eyeROpen = 0.65;
-              eyeLSmile = 0.6;
-              eyeRSmile = 0.6;
-              eyeBallForm = 0.2;
-              eyeBallY = -0.35;
-              browLY = -0.4;
-              browRY = -0.4;
-              browLAngle = -0.5;
-              browRAngle = -0.5;
-              browLForm = -0.4;
-              browRForm = -0.4;
-              emotionSweat = 0.6;
-              emotionParam4 = 0.5;
-              emotionEarRotation = 0.5;
-              emotionEarInOut = 0.3;
-              emotionTailWag = 1.6;
-              break;
-            case "tipsy":
-              mouthForm = 0.6;
-              cheekBlush = 0.95;
-              cheekPuff = 0.3;
-              eyeLOpen = 0.6;
-              eyeROpen = 0.65;
-              eyeLSmile = 0.7;
-              eyeRSmile = 0.7;
-              eyeBallForm = 0.3;
-              browLY = -0.2;
-              browRY = 0.1;
-              browLAngle = -0.3;
-              browRAngle = -0.3;
-              browLForm = -0.3;
-              browRForm = -0.3;
-              emotionParam4 = 0.6;
-              emotionEarRotation = 0.3;
-              emotionTailWag = 1.4;
-              break;
-            case "tired":
-              mouthForm = -0.4;
-              cheekBlush = 0.0;
-              eyeLOpen = 0.35;
-              eyeROpen = 0.35;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.3;
-              browLY = -0.45;
-              browRY = -0.45;
-              browLAngle = -0.4;
-              browRAngle = -0.4;
-              browLForm = -0.3;
-              browRForm = -0.3;
-              emotionSweat = 0.2;
-              emotionEarRotation = 0.5;
-              emotionEarInOut = 0.4;
-              emotionTailWag = 0.3;
-              break;
-            case "sad":
-              mouthForm = -1.0;
-              cheekBlush = 0.0;
-              eyeLOpen = 0.75;
-              eyeROpen = 0.75;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.4;
-              browLY = -0.7;
-              browRY = -0.7;
-              browLAngle = -0.6;
-              browRAngle = -0.6;
-              browLForm = -0.6;
-              browRForm = -0.6;
-              emotionTear = 1.0;
-              emotionParam2 = 1.0; // Tamamo Sad Tear mark
-              emotionEarRotation = 0.55;
-              emotionEarInOut = 0.35;
-              emotionTailWag = 0.4;
-              break;
-            case "crying":
-              mouthForm = -0.95;
-              cheekBlush = 0.6;
-              eyeLOpen = 0.35;
-              eyeROpen = 0.35;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.6;
-              browLY = -0.85;
-              browRY = -0.85;
-              browLAngle = -0.8;
-              browRAngle = -0.8;
-              browLForm = -0.7;
-              browRForm = -0.7;
-              emotionTear = 1.0;
-              emotionParam2 = 1.0; // Tamamo Sad Tear mark
-              emotionEarRotation = 0.6;
-              emotionEarInOut = 0.4;
-              emotionTailWag = 0.3;
-              break;
-            case "scared":
-              mouthForm = -0.6;
-              cheekBlush = 0.0;
-              eyeLOpen = 1.45;
-              eyeROpen = 1.45;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.7;
-              browLY = 0.85;
-              browRY = 0.85;
-              browLAngle = -0.65;
-              browRAngle = -0.65;
-              browLForm = -0.5;
-              browRForm = -0.5;
-              emotionSweat = 0.85;
-              emotionTear = 0.3;
-              emotionEarRotation = 0.6;
-              emotionEarInOut = 0.5;
-              emotionTailWag = 0.2;
-              break;
-            case "angry":
-              mouthForm = -0.85;
-              cheekBlush = 0.0;
-              eyeLOpen = 0.85;
-              eyeROpen = 0.85;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.5;
-              browLY = -0.85;
-              browRY = -0.85;
-              browLAngle = 0.8;
-              browRAngle = 0.8;
-              browLForm = -0.6;
-              browRForm = -0.6;
-              emotionAnger = 1.0;
-              emotionParam3 = 1.0; // Tamamo Angry mark
-              emotionEarRotation = 0.65;
-              emotionEarInOut = -0.4;
-              emotionTailWag = 1.8;
-              break;
-            case "evil":
-              mouthForm = 0.75;
-              cheekBlush = 0.0;
-              eyeLOpen = 0.7;
-              eyeROpen = 0.7;
-              eyeLSmile = 0.3;
-              eyeRSmile = 0.3;
-              eyeBallForm = -0.4;
-              browLY = -0.7;
-              browRY = -0.7;
-              browLAngle = 0.85;
-              browRAngle = 0.85;
-              browLForm = -0.5;
-              browRForm = -0.5;
-              emotionAnger = 0.4;
-              emotionDarkFace = 0.8;
-              emotionParam3 = 0.7;
-              emotionEarRotation = 0.5;
-              emotionTailWag = 1.3;
-              break;
-            default:
-              mouthForm = 0.0;
-              cheekBlush = 0.0;
-              eyeLOpen = 1.0;
-              eyeROpen = 1.0;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = 0.0;
-              browLY = 0.0;
-              browRY = 0.0;
-              browLAngle = 0.0;
-              browRAngle = 0.0;
-              browLForm = 0.0;
-              browRForm = 0.0;
-              emotionTear = 0.0;
-              emotionTailWag = 1.0;
-              break;
-          }
+          // Face recipe for the current emotion (src/lib/emotionFaces.ts).
+          let {
+            mouthForm,
+            cheekBlush,
+            cheekPuff,
+            browLY,
+            browRY,
+            browLX,
+            browRX,
+            browLAngle,
+            browRAngle,
+            browLForm,
+            browRForm,
+            eyeLOpen,
+            eyeROpen,
+            eyeLSmile,
+            eyeRSmile,
+            eyeBallForm,
+            eyeBallX,
+            eyeBallY,
+            emotionTear,
+            emotionQuestionMark,
+            emotionExclamation,
+            emotionSweat,
+            emotionAnger,
+            emotionHeartEyes,
+            emotionStarEyes,
+            emotionDarkFace,
+            emotionParam2,
+            emotionParam3,
+            emotionParam4,
+            emotionEarRotation,
+            emotionEarInOut,
+            emotionEar1,
+            emotionEar2,
+            emotionEar3,
+            emotionTailWag,
+            emotionMouthShrug,
+            emotionMouthFunnel,
+            emotionMouthPucker,
+            emotionMouthX,
+          } = emotionFace(emotionRef.current);
 
           if (motionEyeLOpenOverride !== null) {
             eyeLOpen = motionEyeLOpenOverride;
@@ -1680,12 +1511,26 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             ? Math.max(lipSync.mouthOpenY, mouthOpenRatioRef.current)
             : 0;
 
-          applyLive2DMultiJointKinematics(
+          // Blink curve from the Waifu Pet: close over 120 ms, open over 180 ms.
+          const sinceBlink = performance.now() - blinkStartRef.current;
+          const blinkFactor =
+            sinceBlink < 0 || sinceBlink > 300 ? 1 : sinceBlink < 120 ? 1 - sinceBlink / 120 : (sinceBlink - 120) / 180;
+          // A model's own expression file is the authority; the code-made face is only a fallback.
+          const faceActive = emotionRef.current !== "neutral" && !hasNativeExprs;
+          const frameNow = performance.now();
+          pendingKinematicsRef.current = () => applyLive2DMultiJointKinematics(
             core,
             trackingStateRef.current,
             {
-              targetX: mouseTargetRef.current.x,
-              targetY: mouseTargetRef.current.y,
+              faceActive,
+              blinkFactor,
+              tailWag: ![...nativeMotionParamsRef.current].some((id) => /TAIL/i.test(id)),
+              writeBreath: !hasIdleMotionsRef.current,
+              eyeLOpenOverride: motionEyeLOpenOverride,
+              motionEyeBallX: motionEyeBallXOverride ?? 0,
+              motionEyeBallY: motionEyeBallYOverride ?? 0,
+              targetX: gaze.x,
+              targetY: gaze.y,
               deltaTime: dt,
               physicsIntensity: physicsIntensityRef.current,
               trackingEngineEnabled: trackingEngineEnabledRef.current,
@@ -1732,34 +1577,90 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               motionAngleX,
               motionAngleY,
               motionAngleZ,
+              motionBodyAngleX,
+              motionBodyAngleY,
               motionBodyAngleZ,
               motionMouthOpen,
               mouthOpenRatio: currentMouthOpen,
               mouthFormRatio: lipSync.mouthForm,
               isSpeaking: activeSpeaking,
             },
-            performance.now()
+            frameNow
           );
         };
 
         app.ticker.add(updateModelFrame);
 
+        // Run the engine inside the model's own update, right after motion files and
+        // expressions are applied and saved and before physics (Live2D's focus step,
+        // where the Waifu Pet applies gaze). Its head/body movement then layers on top
+        // of idle loops and gestures, physics reacts to the sum, and nothing piles up
+        // between frames.
+        try {
+          const im = model.internalModel;
+          const originalUpdateFocus = im.updateFocus.bind(im);
+          im.updateFocus = () => {
+            originalUpdateFocus();
+            const apply = pendingKinematicsRef.current;
+            if (apply) {
+              try {
+                apply();
+              } catch (e) {
+                // a cosmetic layer must never stop the model from drawing
+              }
+            }
+          };
+          // The built-in blink pauses whenever any motion plays; ours always runs.
+          im.eyeBlink = undefined;
+          const idleGroup = im.motionManager?.groups?.idle;
+          hasIdleMotionsRef.current = Boolean(idleGroup && (im.motionManager?.definitions?.[idleGroup] || []).length > 0);
+          // Idle loops play in random order, but never the same one twice in a row
+          // (same rule as the Waifu Pet's playIdle).
+          const mgr = im.motionManager;
+          if (mgr && idleGroup && typeof mgr.startRandomMotion === "function") {
+            const originalRandom = mgr.startRandomMotion.bind(mgr);
+            let lastIdle = -1;
+            mgr.startRandomMotion = (group: string, priority?: number) => {
+              const count = (mgr.definitions?.[group] || []).length;
+              if (group !== idleGroup || count < 2) return originalRandom(group, priority);
+              let i = Math.floor(Math.random() * (count - 1));
+              if (i >= lastIdle && lastIdle >= 0) i++;
+              lastIdle = i;
+              return mgr.startMotion(group, i, priority);
+            };
+          }
+        } catch (e: any) {
+          logLive2DDiagnostic("cubism", `Could not attach the motion layer hook: ${e?.message}`);
+        }
+
         // Calculate responsive scale safely and center model
         const mWidth = (model.width && !isNaN(model.width) && model.width > 0) ? model.width : 400;
         const mHeight = (model.height && !isNaN(model.height) && model.height > 0) ? model.height : 600;
-        let fitScale = Math.min((width * 0.85) / mWidth, (height * 0.9) / mHeight);
+        // Tall, narrow stages (phones) fill the width and sit her near the top, so her
+        // face stays visible when the keyboard or the conversation sheet covers the bottom.
+        const tallStage = height / Math.max(1, width) > 1.25;
+        let fitScale = tallStage
+          ? Math.min((width * 1.0) / mWidth, (height * 0.9) / mHeight)
+          : Math.min((width * 0.85) / mWidth, (height * 0.9) / mHeight);
         if (isNaN(fitScale) || fitScale <= 0 || fitScale === Infinity) {
           fitScale = 0.25;
         }
+        const defaultY = tallStage
+          ? Math.max(56, height * 0.07) + (mHeight * fitScale) / 2
+          : height / 2 + 15;
 
         if (model.anchor && typeof model.anchor.set === "function") {
           model.anchor.set(0.5, 0.5);
         }
 
-        const finalScale = (initialScale !== undefined && !isNaN(initialScale) && initialScale > 0) ? initialScale : fitScale;
+        // Saved framing is converted from the stage height it was saved at.
+        const savedRef = initialRefHeight && initialRefHeight > 0 ? initialRefHeight : 420;
+        const toStage = height / savedRef;
+        const finalScale = (initialScale !== undefined && !isNaN(initialScale) && initialScale > 0) ? initialScale * toStage : fitScale;
         const containerW = displayAreaRef.current?.clientWidth || width;
         const finalX = containerW / 2;
-        const finalY = (initialY !== undefined && !isNaN(initialY)) ? initialY : (height / 2 + 15);
+        const finalY = (initialY !== undefined && !isNaN(initialY)) ? initialY * toStage : defaultY;
+        frameHeightRef.current = height;
 
         model.scale.set(finalScale);
         model.x = finalX;
@@ -1767,12 +1668,31 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         setZoomLevel(finalScale);
 
         // Add ResizeObserver for horizontal centering in container
+        // Keep her framed as the stage changes size. On touch devices, a shorter
+        // stage at the same width is the on-screen keyboard: keep scale and y
+        // (her head stays where it was, the bottom is cropped). Otherwise scale
+        // and y follow the stage height.
+        let lastStageW = width;
+        let tallestAtWidth = height;
         resizeObserver = new ResizeObserver((entries) => {
           if (model && app && entries[0].contentRect.width > 0) {
             const containerWidth = entries[0].contentRect.width;
             const containerHeight = entries[0].contentRect.height;
             app.renderer.resize(containerWidth, containerHeight);
             model.x = containerWidth / 2;
+            if (containerHeight > 0) {
+              const keyboardAware = isMobileDevice() && Math.abs(containerWidth - lastStageW) < 2;
+              tallestAtWidth = keyboardAware ? Math.max(tallestAtWidth, containerHeight) : containerHeight;
+              lastStageW = containerWidth;
+              const base = frameHeightRef.current || tallestAtWidth;
+              if (Math.abs(tallestAtWidth - base) > 1) {
+                const ratio = tallestAtWidth / base;
+                model.scale.set(model.scale.x * ratio);
+                model.y = model.y * ratio;
+                frameHeightRef.current = tallestAtWidth;
+                setZoomLevel(model.scale.x);
+              }
+            }
           }
         });
         if (displayAreaRef.current) {
@@ -1781,6 +1701,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         live2dModelRef.current = model;
         pixiAppRef.current = app;
+        // ?live2dDebug in the URL exposes the model for inspecting parameters in the console.
+        if (new URLSearchParams(window.location.search).has("live2dDebug")) {
+          (window as any).__live2dModel = model;
+        }
 
         if (isSubscribed) {
           setLive2dStatus("active");
@@ -1868,53 +1792,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         const elapsed = (Date.now() - motionStartTimeRef.current) / 1000;
         const duration = 3.5;
         if (elapsed < duration) {
-          const progress = elapsed / duration;
-          const pRad = progress * Math.PI;
-
-          switch (activeMotionRef.current) {
-            case "nod":
-              motionProcAngleY = Math.sin(progress * Math.PI * 2) * 18;
-              break;
-            case "shake":
-              motionProcAngleX = Math.sin(progress * Math.PI * 3) * 22;
-              break;
-            case "wave":
-              motionProcAngleZ = Math.sin(progress * Math.PI * 2) * 16;
-              break;
-            case "bow":
-              motionProcAngleY = -Math.sin(pRad) * 25;
-              break;
-            case "laugh":
-              motionProcAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 12;
-              motionProcMouthOpen = 0.4;
-              break;
-            case "wink":
-              if (progress < 0.75) {
-                motionProcEyeLOverride = 0;
-              }
-              break;
-            case "check_nails":
-              motionProcAngleX = Math.sin(pRad) * 20;
-              motionProcAngleY = -Math.sin(pRad) * 16;
-              motionProcAngleZ = -Math.sin(pRad) * 12;
-              break;
-            case "jiggle_dance":
-              motionProcAngleZ = Math.sin(progress * Math.PI * 6) * 16;
-              motionProcAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 8;
-              break;
-            case "sigh_tilt":
-              motionProcAngleZ = Math.sin(pRad) * 18;
-              motionProcAngleY = Math.sin(pRad) * 14;
-              motionProcMouthOpen = Math.sin(pRad) * 0.25;
-              break;
-            case "curious_glance":
-              motionProcAngleX = Math.sin(progress * Math.PI * 2) * 22;
-              motionProcAngleZ = Math.sin(progress * Math.PI) * 12;
-              break;
-            case "stretch_wave":
-              motionProcAngleY = Math.sin(pRad) * 18;
-              break;
-          }
+          const pose = motionPose(activeMotionRef.current, elapsed, duration);
+          motionProcAngleX = pose.angleX;
+          motionProcAngleY = pose.angleY;
+          motionProcAngleZ = pose.angleZ;
+          motionProcEyeLOverride = pose.eyeLOpen;
+          motionProcMouthOpen = pose.mouthOpen;
         }
       }
 
@@ -2162,20 +2045,29 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   return (
     <div
       ref={containerRef}
-      onMouseUp={isMobile ? undefined : handleResizeSave}
-      style={{
-        transform: isMobile ? undefined : `translate(${pos.x}px, ${pos.y}px)`,
-        position: "relative",
-        zIndex: isDraggingWindow ? 30 : 10,
-        width: isMobile ? "100%" : (size.width || undefined),
-        height: isMobile ? undefined : (size.height || undefined),
-        maxWidth: "100%",
-      }}
-      className={`w-full max-w-full mx-auto bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-2xl min-w-0 min-h-[380px] ${
-        isMobile ? "resize-none" : "lg:resize lg:min-w-[300px] lg:min-h-[400px]"
-      }`}
+      onMouseUp={isMobile || fill ? undefined : handleResizeSave}
+      style={
+        fill
+          ? undefined
+          : {
+              transform: isMobile ? undefined : `translate(${pos.x}px, ${pos.y}px)`,
+              position: "relative",
+              zIndex: isDraggingWindow ? 30 : 10,
+              width: isMobile ? "100%" : (size.width || undefined),
+              height: isMobile ? undefined : (size.height || undefined),
+              maxWidth: "100%",
+            }
+      }
+      className={
+        fill
+          ? "relative w-full h-full min-w-0 min-h-0 flex flex-col overflow-hidden bg-slate-950"
+          : `w-full max-w-full mx-auto bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-2xl min-w-0 min-h-[380px] ${
+              isMobile ? "resize-none" : "lg:resize lg:min-w-[300px] lg:min-h-[400px]"
+            }`
+      }
     >
       {/* Top Header Bar */}
+      {!fill && (
       <div
         onMouseDown={isMobile ? undefined : handleHeaderMouseDown}
         onTouchStart={isMobile ? undefined : handleHeaderTouchStart}
@@ -2205,6 +2097,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           </span>
         </div>
       </div>
+      )}
 
       {/* Interactive Display Area */}
       <div
@@ -2217,8 +2110,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         onTouchMove={handleTouchMoveCanvas}
         onTouchEnd={handleTouchEndCanvas}
         onWheel={handleWheel}
-        style={{ touchAction: "pan-y" }}
-        className="relative w-full h-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group flex-1 touch-pan-y"
+        style={{ touchAction: fill ? "none" : "pan-y" }}
+        className={`relative w-full ${fill ? "h-full min-h-0" : "h-[420px]"} bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group flex-1 ${fill ? "" : "touch-pan-y"}`}
       >
         {/* Canvas for WebGL Live2D Model */}
         <canvas

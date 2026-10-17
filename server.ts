@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import JSZip from "jszip";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
@@ -48,6 +49,7 @@ import {
   sendAccountUnlockEmail,
   testSmtpConnection,
 } from "./server/mailer.js";
+import { DEFAULT_TTS_BASE_URL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from "./src/lib/voiceDefaults.js";
 
 // Configure Transformers.js for Node runtime
 env.allowLocalModels = false;
@@ -68,8 +70,11 @@ async function getWhisperPipeline() {
 
   whisperLoadingPromise = (async () => {
     try {
-      console.log("Loading local server Whisper STT model (Xenova/whisper-tiny)...");
-      const pipe = await pipeline("automatic-speech-recognition", "Xenova/whisper-tiny");
+      // WHISPER_MODEL picks the size: Xenova/whisper-tiny (default, fastest),
+      // Xenova/whisper-base or Xenova/whisper-small (more accurate, slower).
+      const modelName = process.env.WHISPER_MODEL || "Xenova/whisper-tiny";
+      console.log(`Loading local server Whisper STT model (${modelName})...`);
+      const pipe = await pipeline("automatic-speech-recognition", modelName);
       whisperPipeline = pipe;
       console.log("Local Whisper model loaded successfully!");
       return pipe;
@@ -212,7 +217,7 @@ async function startServer() {
   // unsaved URLs so the "Test connection" tools keep working while configuring.
   // ---------------------------------------------------------------------------
   type SavedEndpoint = { base: string; key: string; apiKey: string };
-  const DEFAULT_TTS_BASE = "http://localhost:8000/v1";
+  const DEFAULT_TTS_BASE = DEFAULT_TTS_BASE_URL;
 
   const normalizeBase = (raw: unknown): string | null => {
     if (typeof raw !== "string" || !raw.trim()) return null;
@@ -940,6 +945,23 @@ async function startServer() {
   // Auto-extract assets/Tamamo.zip if present and model3.json not yet extracted
   const defaultTamamoZipPath = path.join(process.cwd(), "assets", "Tamamo.zip");
   const tamamoFolderPath = path.join(MODELS_DIR, "tamamo");
+  // The bundled Tamamo is re-extracted whenever assets/Tamamo.zip changes (new
+  // motions or expressions in an update), tracked by a fingerprint file.
+  const TAMAMO_STAMP = ".bundle-fingerprint";
+  const bundledTamamoFingerprint = (() => {
+    try {
+      return crypto.createHash("sha1").update(fs.readFileSync(defaultTamamoZipPath)).digest("hex");
+    } catch {
+      return "";
+    }
+  })();
+  const bundledTamamoIsCurrent = () => {
+    try {
+      return fs.readFileSync(path.join(tamamoFolderPath, TAMAMO_STAMP), "utf-8") === bundledTamamoFingerprint;
+    } catch {
+      return false;
+    }
+  };
 
   // Model ids are generated server-side ("tamamo" or model_<timestamp>_<rand>); anything else is rejected.
   const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -982,15 +1004,18 @@ async function startServer() {
       return hasModelJson && hasMoc;
     };
 
-    if (checkModelJson(modelFolderPath)) {
+    const isBundledTamamo = (modelId === "tamamo" || modelId === "Tamamo") && fs.existsSync(defaultTamamoZipPath);
+    if (checkModelJson(modelFolderPath) && (!isBundledTamamo || bundledTamamoIsCurrent())) {
       return true;
     }
 
-    if ((modelId === "tamamo" || modelId === "Tamamo") && fs.existsSync(defaultTamamoZipPath)) {
+    if (isBundledTamamo) {
       try {
         console.log("[Project Waifu] Extracting default Tamamo model from assets/Tamamo.zip...");
         const zipBuffer = fs.readFileSync(defaultTamamoZipPath);
         const zip = await JSZip.loadAsync(zipBuffer);
+        // Start clean so files dropped from the bundle don't linger.
+        fs.rmSync(tamamoFolderPath, { recursive: true, force: true });
         fs.mkdirSync(tamamoFolderPath, { recursive: true });
         const zipKeys = Object.keys(zip.files);
         for (const key of zipKeys) {
@@ -1005,6 +1030,7 @@ async function startServer() {
           const contentBuffer = await entry.async("nodebuffer");
           fs.writeFileSync(outPath, contentBuffer);
         }
+        fs.writeFileSync(path.join(tamamoFolderPath, TAMAMO_STAMP), bundledTamamoFingerprint);
         return true;
       } catch (err) {
         console.error("[Project Waifu] Failed to extract Tamamo.zip:", err);
@@ -1346,16 +1372,36 @@ async function startServer() {
   app.post("/api/waifu/stt", requireUser, express.json({ limit: "50mb" }), async (req, res) => {
     try {
       const user = (req as AuthedRequest).user;
-      const { pcmFloat32, audioBase64, mimeType = "audio/webm", language = "en-US", openWebUIConfig } = req.body || {};
+      const { pcmFloat32, pcmBase64, audioBase64, mimeType = "audio/webm", language = "en-US", openWebUIConfig } = req.body || {};
 
-      if ((!pcmFloat32 || !pcmFloat32.length) && !audioBase64) {
+      // 16 kHz mono PCM: either a JSON number array (push-to-talk) or base64
+      // Float32 (conversation mode, ~5x smaller).
+      let pcm: Float32Array | null = null;
+      if (typeof pcmBase64 === "string" && pcmBase64) {
+        const buf = Buffer.from(pcmBase64, "base64");
+        pcm = new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength - (buf.byteLength % 4)));
+      } else if (Array.isArray(pcmFloat32) && pcmFloat32.length > 0) {
+        pcm = new Float32Array(pcmFloat32);
+      }
+
+      if (!pcm && !audioBase64) {
         return res.status(400).json({ error: "No audio PCM data or audio base64 provided" });
       }
 
+      // Near-silent clips are where Whisper invents words ("you", "thank you"), so skip them.
+      if (pcm && pcm.length > 0) {
+        let sum = 0;
+        for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+        const rms = Math.sqrt(sum / pcm.length);
+        if (rms < 0.003) {
+          return res.json({ text: "", skipped: "silence" });
+        }
+      }
+
       // 1. Built-in Local Server Whisper STT (No external keys/APIs needed!)
-      if (pcmFloat32 && Array.isArray(pcmFloat32) && pcmFloat32.length > 0) {
+      if (pcm && pcm.length > 0) {
         try {
-          const audioData = new Float32Array(pcmFloat32);
+          const audioData = pcm;
           const pipe = await getWhisperPipeline();
           const langCode = language ? language.split("-")[0].toLowerCase() : "english";
           
@@ -1364,9 +1410,10 @@ async function startServer() {
             task: "transcribe",
           });
 
-          if (result && result.text) {
-            const text = result.text.trim();
-            console.log("[Local Whisper STT Success]:", text);
+          if (result && typeof result.text === "string") {
+            // Drop Whisper's non-speech markers such as [BLANK_AUDIO] or (music).
+            const text = result.text.replace(/\[[^\]]*\]|\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+            console.log("[Local Whisper STT Success]:", text || "(no speech)");
             return res.json({ text });
           }
         } catch (whisperErr: any) {
@@ -1446,8 +1493,8 @@ async function startServer() {
         targetUrl = `${targetUrl}/v1/audio/speech`;
       }
 
-      const voiceToUse = voice && voice.trim() ? voice.trim() : "af_bella(.1)+zf_xiaoni(.9)";
-      const modelToUse = model && model.trim() ? model.trim() : "kokoro";
+      const voiceToUse = voice && voice.trim() ? voice.trim() : DEFAULT_TTS_VOICE;
+      const modelToUse = model && model.trim() ? model.trim() : DEFAULT_TTS_MODEL;
 
       console.log(`[TTS Proxy] Requesting speech from ${targetUrl} (model: ${modelToUse}, voice: ${voiceToUse})`);
 

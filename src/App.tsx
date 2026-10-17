@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { DEFAULT_TTS_BASE_URL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from "./lib/voiceDefaults";
 import { OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile, User, EmotionType, MotionType } from "./types";
 import { OpenWebUITester } from "./components/OpenWebUITester";
 import { VoicePipelineTester } from "./components/VoicePipelineTester";
@@ -65,10 +66,10 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
   rate: 1.0,
   volume: 1.0,
   customServerUrl: "http://localhost:8000/api/tts",
-  openaiBaseUrl: "http://localhost:8000/v1",
+  openaiBaseUrl: DEFAULT_TTS_BASE_URL,
   openaiApiKey: "",
-  openaiModel: "kokoro",
-  openaiVoice: "af_bella(.1)+zf_xiaoni(.9)",
+  openaiModel: DEFAULT_TTS_MODEL,
+  openaiVoice: DEFAULT_TTS_VOICE,
 };
 
 const getInitialTTSConfig = (): TTSConfig => {
@@ -133,6 +134,29 @@ const getInitialSTTConfig = (): STTConfig => {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"chat" | "persona" | "openwebui" | "voice" | "debug-log">("chat");
+
+  // The chat screen is a fixed-height stage. Its height follows the *visible*
+  // viewport, so when a phone keyboard opens the stage shrinks to the space
+  // above it instead of the page scrolling her out of view.
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const update = () => {
+      setViewportHeight(Math.round(vv ? vv.height : window.innerHeight));
+      // iOS scrolls the page when the keyboard opens; the stage already fits.
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+    };
+    update();
+    vv?.addEventListener("resize", update);
+    vv?.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    return () => {
+      vv?.removeEventListener("resize", update);
+      vv?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+  const isStage = activeTab === "chat";
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [currentEmotion, setCurrentEmotion] = useState<EmotionType>("neutral");
@@ -445,11 +469,14 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-violet-600 selection:text-white">
+    <div
+      style={isStage && viewportHeight ? { height: viewportHeight } : undefined}
+      className={`${isStage ? "h-[100dvh] overflow-hidden" : "min-h-screen overflow-x-hidden"} w-full max-w-full bg-slate-950 text-slate-200 flex flex-col font-sans selection:bg-violet-600 selection:text-white`}
+    >
       
       {/* Top Navigation Header */}
-      <header className="h-14 sm:h-16 bg-slate-900/80 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md w-full max-w-full overflow-hidden">
-        <div className="max-w-7xl mx-auto h-full px-2 sm:px-4 md:px-8 flex items-center justify-between gap-1 sm:gap-3">
+      <header className="h-14 sm:h-16 flex-shrink-0 bg-slate-900/80 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md w-full max-w-full overflow-hidden">
+        <div className={`${isStage ? "" : "max-w-7xl mx-auto"} h-full px-2 sm:px-4 md:px-6 flex items-center justify-between gap-1 sm:gap-3`}>
           
           {/* Left: Brand Logo & Title */}
           <div className="flex items-center space-x-1.5 sm:space-x-3 flex-shrink-0 min-w-0">
@@ -463,6 +490,9 @@ export default function App() {
               </span>
             </h1>
           </div>
+
+            {/* Persona picker (desktop chat screen renders into this slot) */}
+            <div id="persona-slot" className={`${isStage ? "hidden lg:flex" : "hidden"} flex-1 min-w-0 justify-start px-4`} />
 
             {/* Center / Right: Dedicated Status Controls */}
             <div className="flex items-center space-x-1 sm:space-x-2 md:space-x-3 flex-shrink-0">
@@ -780,7 +810,13 @@ export default function App() {
       )}
 
       {/* Main Body Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-4 md:p-6 space-y-4 sm:space-y-6 overflow-x-hidden">
+      <main
+        className={
+          isStage
+            ? "flex-1 min-h-0 w-full flex overflow-hidden"
+            : "flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-4 md:p-6 space-y-4 sm:space-y-6 overflow-x-hidden"
+        }
+      >
         
         {activeTab === "chat" && (
           <ChatConsole
@@ -905,7 +941,7 @@ export default function App() {
       />
 
       {/* Bottom Status Bar / Footer */}
-      <footer className="h-8 bg-slate-900/80 border-t border-slate-800 flex items-center px-3 sm:px-6 justify-between text-[10px] text-slate-500 font-mono w-full max-w-full overflow-hidden">
+      <footer className={`${isStage ? "hidden lg:flex" : "flex"} h-8 flex-shrink-0 bg-slate-900/80 border-t border-slate-800 items-center px-3 sm:px-6 justify-between text-[10px] text-slate-500 font-mono w-full max-w-full overflow-hidden`}>
         <div className="hidden md:flex items-center space-x-4">
           <span>PID: 12480</span>
           <span>LATENCY: 42ms</span>

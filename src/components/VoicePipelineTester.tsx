@@ -3,6 +3,7 @@ import { TTSConfig, STTConfig } from "../types";
 import { Mic, MicOff, Volume2, Play, Radio, Loader2, Save, Check } from "lucide-react";
 import { fetchOpenAITTSAudioBlob } from "../lib/openaiTts";
 import { lipSyncEngine } from "../lib/lipSyncEngine";
+import { DEFAULT_TTS_BASE_URL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE, TAMAMO_TTS_VOICE } from "../lib/voiceDefaults";
 import { parseEmotionAndMotionTags } from "../lib/tagParser";
 
 interface VoicePipelineTesterProps {
@@ -287,10 +288,10 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
       try {
         const blob = await fetchOpenAITTSAudioBlob({
           text: cleanText,
-          baseUrl: ttsConfig.openaiBaseUrl || "http://localhost:8000/v1",
+          baseUrl: ttsConfig.openaiBaseUrl || DEFAULT_TTS_BASE_URL,
           apiKey: ttsConfig.openaiApiKey || "",
-          model: ttsConfig.openaiModel || "kokoro",
-          voice: ttsConfig.openaiVoice || "af_bella(.1)+zf_xiaoni(.9)",
+          model: ttsConfig.openaiModel || DEFAULT_TTS_MODEL,
+          voice: ttsConfig.openaiVoice || DEFAULT_TTS_VOICE,
           speed: ttsConfig.rate || 1.0,
         });
 
@@ -562,17 +563,18 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
                     type="text"
                     value={ttsConfig.openaiVoice || ""}
                     onChange={(e) => onTTSChange({ ...ttsConfig, openaiVoice: e.target.value })}
-                    placeholder="e.g. af_bella(.1)+zf_xiaoni(.9)"
+                    placeholder={`e.g. ${DEFAULT_TTS_VOICE} or ${TAMAMO_TTS_VOICE}`}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-violet-200 focus:outline-none focus:border-violet-500/50"
                   />
                   <span className="text-[10px] text-slate-500 block mt-1">
-                    Accepts voice blends like <code className="text-violet-300">af_bella(.1)+zf_xiaoni(.9)</code> or standard voice IDs (<code className="text-violet-300">af_bella</code>, <code className="text-violet-300">alloy</code>).
+                    Accepts voice blends like <code className="text-violet-300">{TAMAMO_TTS_VOICE}</code> or standard voice IDs (<code className="text-violet-300">af_bella</code>, <code className="text-violet-300">alloy</code>).
                   </span>
 
                   {/* Preset Voice Chips */}
                   <div className="flex flex-wrap gap-1.5 pt-2">
                     {[
-                      "af_bella(.1)+zf_xiaoni(.9)",
+                      DEFAULT_TTS_VOICE,
+                      TAMAMO_TTS_VOICE,
                       "af_bella",
                       "af_sky",
                       "af_sarah",

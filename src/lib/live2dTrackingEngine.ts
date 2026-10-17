@@ -15,6 +15,9 @@ export interface TrackingState {
   springY: number;
   springVx: number;
   springVy: number;
+  // Tail wag (accumulated phase so mood speed changes ease instead of jumping)
+  tailPhase: number;
+  tailSpeed: number;
 }
 
 export function createInitialTrackingState(): TrackingState {
@@ -27,6 +30,8 @@ export function createInitialTrackingState(): TrackingState {
     springY: 0,
     springVx: 0,
     springVy: 0,
+    tailPhase: 0,
+    tailSpeed: 3.0,
   };
 }
 
@@ -80,6 +85,21 @@ export interface ParameterUpdateOptions {
   motionAngleX?: number;
   motionAngleY?: number;
   motionAngleZ?: number;
+  /** Eye-ball offsets from a code-made gesture (e.g. check_nails glancing down). */
+  motionEyeBallX?: number;
+  motionEyeBallY?: number;
+  /** Write the procedural face (false while a model expression file or plain neutral is showing). */
+  faceActive?: boolean;
+  /** Absolute left-eye value forced by a gesture (wink), or null. */
+  eyeLOpenOverride?: number | null;
+  /** Write ParamBreath (off when the model's own idle motions breathe). */
+  writeBreath?: boolean;
+  /** Code-made tail wag (off while a motion file animates the tail). */
+  tailWag?: boolean;
+  /** 1 = eyes as they are, 0 = closed; multiplies the final eye openness (blinking). */
+  blinkFactor?: number;
+  motionBodyAngleX?: number;
+  motionBodyAngleY?: number;
   motionBodyAngleZ?: number;
   motionMouthOpen?: number;
   mouthOpenRatio?: number;
@@ -136,12 +156,21 @@ export function stepTrackingState(
     springY: nextSpringY,
     springVx: nextSpringVx,
     springVy: nextSpringVy,
+    tailPhase: state.tailPhase,
+    tailSpeed: state.tailSpeed,
   };
 }
 
 /**
  * Injects multi-joint angles, gaze direction, breathing, and secondary physics jiggle
  * into the Live2D CoreModel (compatible with Cubism 2, 3, 4, 5).
+ *
+ * Runs inside the model's own update, after motion files and expressions have been
+ * applied and the frame's values saved, and before physics (the same slot the Waifu
+ * Pet uses for gaze). So head/body/eye movement is ADDED on top of whatever motion
+ * file is playing (idle loops, gestures), physics reacts to the sum, and nothing
+ * accumulates between frames. The face is only written when the procedural face is
+ * in charge; a model's own expression or motion keeps it otherwise.
  */
 export function applyLive2DMultiJointKinematics(
   coreModel: any,
@@ -164,10 +193,15 @@ export function applyLive2DMultiJointKinematics(
     motionAngleX = 0,
     motionAngleY = 0,
     motionAngleZ = 0,
+    motionBodyAngleX = 0,
+    motionBodyAngleY = 0,
     motionBodyAngleZ = 0,
     motionMouthOpen = 0,
     mouthOpenRatio = 0,
     isSpeaking = false,
+    faceActive = true,
+    writeBreath = true,
+    blinkFactor = 1,
   } = options;
 
   // Normal look range coordinates (-1 to 1) - disable tracking if turned off
@@ -189,10 +223,10 @@ export function applyLive2DMultiJointKinematics(
   const angleZ = dynamicTilt + motionAngleZ;
 
   // 4. Body Yaw (ParamBodyAngleX): Upper torso turns with head (approx 35% of head angle)
-  const bodyAngleX = lookX * 10.0 + (effectiveVx * 0.08 * physicsIntensity);
+  const bodyAngleX = lookX * 10.0 + (effectiveVx * 0.08 * physicsIntensity) + motionBodyAngleX;
 
   // 5. Body Pitch / Lean (ParamBodyAngleY): Torso leans forward / backward
-  const bodyAngleY = -lookY * 8.0;
+  const bodyAngleY = -lookY * 8.0 + motionBodyAngleY;
 
   // 6. Body Roll / Tilt (ParamBodyAngleZ): Spine lateral sway
   const dynamicBodyTilt = -lookX * 8.0 + (effectiveVx * 0.04 * physicsIntensity);
@@ -201,8 +235,8 @@ export function applyLive2DMultiJointKinematics(
   // 7. Eye Gaze (ParamEyeBallX / ParamEyeBallY): -1 to +1
   const emotionEyeBallOffsetX = options.emotionEyeBallX ?? 0;
   const emotionEyeBallOffsetY = options.emotionEyeBallY ?? 0;
-  const eyeBallX = Math.max(-1.0, Math.min(1.0, lookX * 0.95 + emotionEyeBallOffsetX));
-  const eyeBallY = Math.max(-1.0, Math.min(1.0, -lookY * 0.95 + emotionEyeBallOffsetY));
+  const eyeBallX = lookX * 0.95 + (faceActive ? emotionEyeBallOffsetX : 0) + (options.motionEyeBallX ?? 0);
+  const eyeBallY = -lookY * 0.95 + (faceActive ? emotionEyeBallOffsetY : 0) + (options.motionEyeBallY ?? 0);
 
   // 8. Natural Breathing Cycle (Sine wave at ~16 breaths/min)
   const breathCycle = (Math.sin((timeMs / 1000) * 2.2) + 1.0) * 0.5;
@@ -278,22 +312,38 @@ export function applyLive2DMultiJointKinematics(
     } catch (e) {}
   };
 
-  // Set Core Multi-Joint Parameters
-  setParam("ParamAngleX", "PARAM_ANGLE_X", angleX);
-  setParam("ParamAngleY", "PARAM_ANGLE_Y", angleY);
-  setParam("ParamAngleZ", "PARAM_ANGLE_Z", angleZ);
+  const getParam = (idC4: string, idC2: string): number | null => {
+    try {
+      if (typeof coreModel.getParameterValueById === "function") return coreModel.getParameterValueById(idC4);
+      if (typeof coreModel.getParamFloat === "function") return coreModel.getParamFloat(idC2);
+    } catch (e) {}
+    return null;
+  };
+  /** Add an offset to the current value (motion output), clamped. */
+  const addClamped = (idC4: string, idC2: string, offset: number, min: number, max: number) => {
+    const cur = getParam(idC4, idC2);
+    if (cur === null) return;
+    setParam(idC4, idC2, Math.max(min, Math.min(max, cur + offset)));
+  };
 
-  setParam("ParamBodyAngleX", "PARAM_BODY_ANGLE_X", bodyAngleX);
-  setParam("ParamBodyAngleY", "PARAM_BODY_ANGLE_Y", bodyAngleY);
-  setParam("ParamBodyAngleZ", "PARAM_BODY_ANGLE_Z", bodyAngleZ);
+  // Head, body and eyes: offsets added on top of the playing motion (if any).
+  setParam("ParamAngleX", "PARAM_ANGLE_X", angleX, true);
+  setParam("ParamAngleY", "PARAM_ANGLE_Y", angleY, true);
+  setParam("ParamAngleZ", "PARAM_ANGLE_Z", angleZ, true);
 
-  setParam("ParamEyeBallX", "PARAM_EYE_BALL_X", eyeBallX);
-  setParam("ParamEyeBallY", "PARAM_EYE_BALL_Y", eyeBallY);
-  setParam("ParamBreath", "PARAM_BREATH", breathCycle);
+  setParam("ParamBodyAngleX", "PARAM_BODY_ANGLE_X", bodyAngleX, true);
+  setParam("ParamBodyAngleY", "PARAM_BODY_ANGLE_Y", bodyAngleY, true);
+  setParam("ParamBodyAngleZ", "PARAM_BODY_ANGLE_Z", bodyAngleZ, true);
+
+  addClamped("ParamEyeBallX", "PARAM_EYE_BALL_X", eyeBallX, -1, 1);
+  addClamped("ParamEyeBallY", "PARAM_EYE_BALL_Y", eyeBallY, -1, 1);
+  if (writeBreath) setParam("ParamBreath", "PARAM_BREATH", breathCycle);
 
   // Set Facial & Emotion Parameters (both C4 Param* and C2 PARAM_* standards)
   const finalMouthOpen = Math.max(mouthOpenRatio, motionMouthOpen);
-  setParam("ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y", finalMouthOpen);
+  if (finalMouthOpen > 0 || faceActive) {
+    setParam("ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y", finalMouthOpen);
+  }
 
   // Dynamic Formant & Vowel Shape Modulation (for realistic speech articulation)
   const mouthFormRatio = options.mouthFormRatio ?? 0;
@@ -325,7 +375,7 @@ export function applyLive2DMultiJointKinematics(
       setParam("ParamMouthE", "PARAM_MOUTH_E", 0);
       setParam("ParamMouthO", "PARAM_MOUTH_O", 0);
     }
-  } else {
+  } else if (faceActive) {
     setParam("ParamMouthForm", "PARAM_MOUTH_FORM", emotionMouthForm);
     setParam("ParamMouthA", "PARAM_MOUTH_A", 0);
     setParam("ParamMouthI", "PARAM_MOUTH_I", 0);
@@ -334,6 +384,26 @@ export function applyLive2DMultiJointKinematics(
     setParam("ParamMouthO", "PARAM_MOUTH_O", 0);
   }
 
+  // Fox Ears Kinematics (Param34: Rotation, Param35: In/Out, Param36..38: Ear 1..3)
+  // A small twitch always plays; the emotion's ear pose only with the procedural face.
+  const earTwitch = Math.sin((timeMs / 1000) * 3.5) * 0.1;
+  if (faceActive) {
+    setParam("Param34", "PARAM_34", (options.emotionEarRotation ?? 0) + earTwitch * 0.5);
+    setParam("Param35", "PARAM_35", options.emotionEarInOut ?? 0);
+    setParam("Param36", "PARAM_36", (options.emotionEar1 ?? 0) + earTwitch);
+    setParam("Param37", "PARAM_37", options.emotionEar2 ?? 0);
+    setParam("Param38", "PARAM_38", options.emotionEar3 ?? 0);
+  } else {
+    setParam("Param34", "PARAM_34", earTwitch * 0.5, true);
+    setParam("Param36", "PARAM_36", earTwitch, true);
+  }
+
+  // Wink and other gestures that force an eye.
+  if (options.eyeLOpenOverride !== undefined && options.eyeLOpenOverride !== null) {
+    setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", options.eyeLOpenOverride);
+  }
+
+  if (faceActive) {
   // Set Expressive Mouth Morphs (MouthShrug, MouthFunnel, MouthPucker, MouthX)
   if (options.emotionMouthShrug !== undefined) {
     setParam("MouthShrug", "MOUTH_SHRUG", options.emotionMouthShrug);
@@ -440,28 +510,27 @@ export function applyLive2DMultiJointKinematics(
   setParam("ParamShadow", "PARAM_SHADOW", darkVal);
   setPart("PartDarkFace", "PART_DARK_FACE", darkVal);
 
-  // Fox Ears Kinematics (Param34: Rotation, Param35: In/Out, Param36..38: Ear 1..3)
-  const earTwitch = Math.sin((timeMs / 1000) * 3.5) * 0.1;
-  const earRot = (options.emotionEarRotation ?? 0) + earTwitch * 0.5;
-  const earInOut = options.emotionEarInOut ?? 0;
-  const ear1 = (options.emotionEar1 ?? 0) + earTwitch;
-  const ear2 = options.emotionEar2 ?? 0;
-  const ear3 = options.emotionEar3 ?? 0;
+  } // end procedural face
 
-  setParam("Param34", "PARAM_34", earRot);
-  setParam("Param35", "PARAM_35", earInOut);
-  setParam("Param36", "PARAM_36", ear1);
-  setParam("Param37", "PARAM_37", ear2);
-  setParam("Param38", "PARAM_38", ear3);
+  // Blink: scales whatever eye openness the motion/expression/face produced.
+  if (blinkFactor < 1) {
+    const l = getParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN");
+    const r = getParam("ParamEyeROpen", "PARAM_EYE_R_OPEN");
+    if (l !== null) setParam("ParamEyeLOpen", "PARAM_EYE_L_OPEN", l * blinkFactor);
+    if (r !== null) setParam("ParamEyeROpen", "PARAM_EYE_R_OPEN", r * blinkFactor);
+  }
 
   // Fox Tail Wagging Kinematics (Param_Angle_Rotation_1_TAIL2 .. 9)
-  const tailSpeed = (options.emotionTailWag ?? 1.0) * 3.0;
-  const tailBaseAmp = Math.sin((timeMs / 1000) * tailSpeed);
-  for (let t = 1; t <= 9; t++) {
+  // Same algorithm as the Waifu Pet desktop app (renderer/pet.js): one sine per
+  // segment, each lagging the previous one so the wag ripples base to tip. The
+  // phase is integrated and the speed eases toward the mood's target.
+  const tailDt = Math.min(0.1, Math.max(0, options.deltaTime || 0));
+  const tailTarget = (options.emotionTailWag ?? 1.0) * 3.0; // radians per second
+  state.tailSpeed += (tailTarget - state.tailSpeed) * Math.min(1, tailDt * 3);
+  state.tailPhase = (state.tailPhase + tailDt * state.tailSpeed) % (Math.PI * 2000);
+  for (let t = 1; t <= 9 && options.tailWag !== false; t++) {
     const tailParamId = `Param_Angle_Rotation_${t}_TAIL2`;
-    const lagPhase = t * 0.35;
-    const tailVal = Math.sin((timeMs / 1000) * tailSpeed - lagPhase) * 15.0;
-    setParam(tailParamId, tailParamId, tailVal);
+    setParam(tailParamId, tailParamId, Math.sin(state.tailPhase - t * 0.35) * 15.0);
   }
 
   // Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)

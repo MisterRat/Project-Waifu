@@ -111,6 +111,11 @@ Only the System Owner can change settings, upload or delete models. Signed-in us
 - **Type Messages**: Converse with your AI companion in natural language.
 - **Voice Output (TTS)**: Speech synthesis plays automatically. By default, it uses Microsoft Edge TTS or Web Speech API.
 - **Voice Input (STT)**: Click the microphone icon to speak directly to your companion using browser speech recognition.
+- **Conversation Mode**: Tap the green sound-wave button and just talk. A speech detector running in your browser (Silero VAD) separates your voice from background noise and sends your sentence when you pause; she listens again after she finishes answering. The detector files (~16 MB) download once, the first time you turn it on.
+- **Layout**: On a computer she fills the stage and the conversation sits in a panel beside her; drag the divider to resize it (double-click to reset). On a phone the latest lines appear as subtitles over her; tap the speech-bubble button for the full conversation.
+- **Idle behaviour** (same rules as the Waifu Pet desktop app): she follows the mouse only while it moves, looks forward while talking, and when left alone glances around, fidgets and changes mood now and then.
+
+**Whisper model size:** speech-to-text runs on the server with `Xenova/whisper-tiny` by default. For better accuracy at the cost of speed, set `WHISPER_MODEL=Xenova/whisper-base` (or `Xenova/whisper-small`) under `environment:` in `docker-compose.yml`.
 
 ### 3. ⚙️ Customizing Personas & Avatars
 - **Persona Switcher**: Quick-swap between preset AI characters or create your own custom companion.
