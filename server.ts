@@ -32,6 +32,7 @@ import {
   unlockUser,
   saveLive2dZip,
   getAllLive2dZips,
+  getLive2dZipBuffer,
   deleteLive2dZip,
   getPrimaryAdminUser,
   getSystemSettings,
@@ -1038,11 +1039,9 @@ async function startServer() {
     }
 
     try {
-      const savedZips = await getAllLive2dZips();
-      const zipRecord = savedZips.find((z) => z.modelId === modelId);
-      if (zipRecord && zipRecord.zipBase64) {
-        console.log(`[Project Waifu] Restoring Live2D model "${zipRecord.name}" (${zipRecord.modelId}) from SQLite database zip...`);
-        const buffer = Buffer.from(zipRecord.zipBase64, "base64");
+      const buffer = await getLive2dZipBuffer(modelId);
+      if (buffer) {
+        console.log(`[Project Waifu] Restoring Live2D model ${modelId} from its stored zip...`);
         const zip = await JSZip.loadAsync(buffer);
         fs.mkdirSync(modelFolderPath, { recursive: true });
         const zipKeys = Object.keys(zip.files);
@@ -1298,8 +1297,8 @@ async function startServer() {
       const modelName = modelFilename.replace(/\.(model3|model)\.json$/i, "");
       const modelUrl = `/models/${modelId}/${relModelPath}`;
 
-      // Save zip file data into SQLite database for persistent deployment/redeploy safety
-      await saveLive2dZip(modelId, modelName, cleanBase64);
+      // Keep the zip in the data volume so the model can be re-extracted after a redeploy
+      await saveLive2dZip(modelId, modelName, buffer);
 
       console.log(`[Project Waifu] Live2D Zip extracted successfully to ${modelFolderPath} -> ${modelUrl}`);
       return res.json({

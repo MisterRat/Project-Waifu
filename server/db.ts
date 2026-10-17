@@ -198,6 +198,32 @@ export async function getDb(): Promise<{ db: Database; save: () => void }> {
       // Column may already exist
     }
 
+    // Move model zips stored inside the database (older versions) out to files, then shrink it.
+    try {
+      const rows = dbInstance.exec("SELECT model_id FROM live2d_zips WHERE length(zip_base64) > 0");
+      const ids = rows.length ? rows[0].values.map((v) => String(v[0])) : [];
+      if (ids.length) {
+        fs.mkdirSync(ZIP_DIR, { recursive: true });
+        for (const id of ids) {
+          const stmt = dbInstance.prepare("SELECT zip_base64 FROM live2d_zips WHERE model_id = ?");
+          stmt.bind([id]);
+          const b64 = stmt.step() ? (stmt.getAsObject().zip_base64 as string) : "";
+          stmt.free();
+          const file = zipFileFor(id);
+          if (!fs.existsSync(file)) {
+            fs.writeFileSync(file + ".tmp", Buffer.from(b64, "base64"));
+            fs.renameSync(file + ".tmp", file);
+          }
+          dbInstance.run("UPDATE live2d_zips SET zip_base64 = '' WHERE model_id = ?", [id]);
+        }
+        dbInstance.run("VACUUM");
+        persistDb();
+        console.log(`[Project Waifu] Moved ${ids.length} model zip(s) out of the database into ${ZIP_DIR}`);
+      }
+    } catch (e) {
+      console.error("[Project Waifu] Could not move model zips out of the database:", e);
+    }
+
     // One-time migration: hash any PINs still stored in plain text
     try {
       const legacy = dbInstance.prepare("SELECT id, pin FROM users WHERE pin IS NOT NULL AND pin <> '' AND pin NOT LIKE 'scrypt$%'");
@@ -758,26 +784,48 @@ export async function saveSystemSettings(data: {
   save();
 }
 
-export async function saveLive2dZip(modelId: string, name: string, zipBase64: string, modelUrl?: string, relPath?: string) {
+// Uploaded model zips are kept as files in the data volume, not inside the database: the whole
+// database is rewritten on every save, so a few 50 MB zips in it made every settings change slow
+// enough that quick edits (a slider, a voice) were lost.
+const ZIP_DIR = path.join(DATA_DIR, "model-zips");
+const zipFileFor = (modelId: string) => path.join(ZIP_DIR, `${modelId.replace(/[^A-Za-z0-9_-]/g, "_")}.zip`);
+
+export async function saveLive2dZip(modelId: string, name: string, zip: Buffer, modelUrl?: string, relPath?: string) {
+  fs.mkdirSync(ZIP_DIR, { recursive: true });
+  const file = zipFileFor(modelId);
+  fs.writeFileSync(file + ".tmp", zip);
+  fs.renameSync(file + ".tmp", file);
   const { db, save } = await getDb();
-  const now = Date.now();
   db.run(`
     INSERT OR REPLACE INTO live2d_zips (model_id, name, zip_base64, model_url, rel_path, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `, [modelId, name, zipBase64, modelUrl || null, relPath || null, now]);
+    VALUES (?, ?, '', ?, ?, ?)
+  `, [modelId, name, modelUrl || null, relPath || null, Date.now()]);
   save();
 }
 
+/** The stored zip of an uploaded model, or null. */
+export async function getLive2dZipBuffer(modelId: string): Promise<Buffer | null> {
+  const file = zipFileFor(modelId);
+  if (fs.existsSync(file)) return fs.readFileSync(file);
+  // Not migrated yet (should not happen after startup): fall back to the database copy.
+  const { db } = await getDb();
+  const stmt = db.prepare("SELECT zip_base64 FROM live2d_zips WHERE model_id = ?");
+  stmt.bind([modelId]);
+  const b64 = stmt.step() ? (stmt.getAsObject().zip_base64 as string) : "";
+  stmt.free();
+  return b64 ? Buffer.from(b64, "base64") : null;
+}
+
+/** Uploaded models (metadata only; read the zip itself with getLive2dZipBuffer). */
 export async function getAllLive2dZips() {
   const { db } = await getDb();
-  const stmt = db.prepare("SELECT * FROM live2d_zips ORDER BY created_at ASC");
+  const stmt = db.prepare("SELECT model_id, name, model_url, rel_path, created_at FROM live2d_zips ORDER BY created_at ASC");
   const results = [];
   while (stmt.step()) {
     const row = stmt.getAsObject();
     results.push({
       modelId: row.model_id as string,
       name: row.name as string,
-      zipBase64: row.zip_base64 as string,
       modelUrl: (row.model_url as string) || null,
       relPath: (row.rel_path as string) || null,
       createdAt: row.created_at as number,
@@ -788,6 +836,9 @@ export async function getAllLive2dZips() {
 }
 
 export async function deleteLive2dZip(modelId: string) {
+  try {
+    fs.rmSync(zipFileFor(modelId), { force: true });
+  } catch (e) {}
   const { db, save } = await getDb();
   db.run("DELETE FROM live2d_zips WHERE model_id = ?", [modelId]);
   save();
