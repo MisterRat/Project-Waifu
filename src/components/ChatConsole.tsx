@@ -122,6 +122,20 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
     if (onMotionChange) onMotionChange(mo);
   };
 
+  // Each reply's speech gets a number. When it finishes, she returns to her default
+  // face and pose, but only if no newer reply has started in the meantime.
+  const speechTokenRef = useRef(0);
+  const returnToDefault = (token: number, delayMs = 600) => {
+    setTimeout(() => {
+      if (token !== speechTokenRef.current) return;
+      handleEmotionChange("neutral");
+      handleMotionChange("none");
+    }, delayMs);
+  };
+  // With no voice, hold the expression for roughly the time it takes to read the reply.
+  const readingTimeMs = (text: string) =>
+    Math.min(12000, Math.max(2500, text.split(/\s+/).filter(Boolean).length * 350));
+
   useEffect(() => {
     if (onEmotionChange) onEmotionChange(currentEmotion);
     if (onMotionChange) onMotionChange(currentMotion);
@@ -613,10 +627,13 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
   }, [isListening, isTranscribing, onMicStatusChange]);
 
   const speakText = async (text: string) => {
-    if (ttsConfig.enabled === false) return;
-
+    const token = ++speechTokenRef.current;
     const { cleanText: cleanSpeech } = parseEmotionAndMotionTags(text, currentEmotion);
-    if (!cleanSpeech) return;
+
+    if (ttsConfig.enabled === false || !cleanSpeech) {
+      returnToDefault(token, readingTimeMs(cleanSpeech));
+      return;
+    }
 
     if (ttsConfig.provider === "openai") {
       setIsSpeaking(true);
@@ -646,6 +663,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
           setAudioVolume(0);
           setIsSpeaking(false);
           URL.revokeObjectURL(audioUrl);
+          returnToDefault(token);
         };
 
         audio.onplay = () => {
@@ -664,12 +682,16 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
         lipSyncEngine.stop();
         setAudioVolume(0);
         setIsSpeaking(false);
+        returnToDefault(token, readingTimeMs(cleanSpeech));
       }
       return;
     }
 
     // Default Web Speech API fallback
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      returnToDefault(token, readingTimeMs(cleanSpeech));
+      return;
+    }
 
     window.speechSynthesis.cancel();
     setIsSpeaking(true);
@@ -700,6 +722,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
       lipSyncEngine.stop();
       setAudioVolume(0);
       setIsSpeaking(false);
+      returnToDefault(token);
     };
 
     utterance.onerror = () => {
@@ -710,6 +733,7 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
       lipSyncEngine.stop();
       setAudioVolume(0);
       setIsSpeaking(false);
+      returnToDefault(token);
     };
 
     window.speechSynthesis.speak(utterance);
