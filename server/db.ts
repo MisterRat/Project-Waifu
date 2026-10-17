@@ -14,6 +14,58 @@ const DB_TEMP_FILE = path.join(DATA_DIR, "app.db.tmp");
 
 let dbInstance: Database | null = null;
 
+// ---------------------------------------------------------------------------
+// PIN hashing (scrypt, built into Node — no extra dependency)
+// Stored format: scrypt$<saltHex>$<hashHex>
+// Legacy rows that still hold a plain-text PIN are accepted once and
+// re-hashed on the next successful sign-in (see verifyUserPin).
+// ---------------------------------------------------------------------------
+const PIN_HASH_PREFIX = "scrypt$";
+const SCRYPT_KEYLEN = 32;
+
+export function hashPin(pin: string): string {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(pin.trim(), salt, SCRYPT_KEYLEN);
+  return `${PIN_HASH_PREFIX}${salt.toString("hex")}$${hash.toString("hex")}`;
+}
+
+export function isHashedPin(stored: string | null | undefined): boolean {
+  return typeof stored === "string" && stored.startsWith(PIN_HASH_PREFIX);
+}
+
+/** Constant-time check of a candidate PIN against a stored hash (or legacy plain-text PIN). */
+export function pinMatches(stored: string | null | undefined, candidate: string | null | undefined): boolean {
+  if (!stored || typeof candidate !== "string") return false;
+  const pin = candidate.trim();
+  if (isHashedPin(stored)) {
+    const [, saltHex, hashHex] = stored.split("$");
+    if (!saltHex || !hashHex) return false;
+    const expected = Buffer.from(hashHex, "hex");
+    const actual = crypto.scryptSync(pin, Buffer.from(saltHex, "hex"), expected.length);
+    return crypto.timingSafeEqual(expected, actual);
+  }
+  // Legacy plain-text PIN
+  const a = Buffer.from(stored);
+  const b = Buffer.from(pin);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+export type PublicUser = {
+  id: string;
+  email: string;
+  role: 'admin' | 'user';
+  status: 'pending' | 'approved' | 'rejected' | 'locked';
+  created_at: number;
+  last_login: number | null;
+};
+
+/** Strip secrets (PIN hash, attempt counter) from any user-shaped object before it leaves the server. */
+export function toPublicUser(user: any): PublicUser | null {
+  if (!user) return null;
+  const { id, email, role, status, created_at, last_login } = user;
+  return { id, email, role, status, created_at, last_login: last_login ?? null };
+}
+
 function persistDb() {
   if (!dbInstance) return;
   try {
@@ -146,6 +198,25 @@ export async function getDb(): Promise<{ db: Database; save: () => void }> {
       // Column may already exist
     }
 
+    // One-time migration: hash any PINs still stored in plain text
+    try {
+      const legacy = dbInstance.prepare("SELECT id, pin FROM users WHERE pin IS NOT NULL AND pin <> '' AND pin NOT LIKE 'scrypt$%'");
+      const toMigrate: { id: string; pin: string }[] = [];
+      while (legacy.step()) {
+        const row = legacy.getAsObject();
+        toMigrate.push({ id: row.id as string, pin: row.pin as string });
+      }
+      legacy.free();
+      for (const row of toMigrate) {
+        dbInstance.run("UPDATE users SET pin = ? WHERE id = ?", [hashPin(row.pin), row.id]);
+      }
+      if (toMigrate.length > 0) {
+        console.log(`[Project Waifu] Hashed ${toMigrate.length} legacy plain-text PIN(s).`);
+      }
+    } catch (err) {
+      console.error("PIN hash migration failed:", err);
+    }
+
     persistDb();
   }
 
@@ -203,16 +274,39 @@ export async function createUser(email: string, role: 'admin' | 'user' = 'user',
   const now = Date.now();
   db.run(
     "INSERT INTO users (id, email, role, status, pin, failed_pin_attempts, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
-    [id, email.trim().toLowerCase(), role, status, pin || null, now]
+    [id, email.trim().toLowerCase(), role, status, pin ? hashPin(pin) : null, now]
   );
   save();
-  return { id, email: email.trim().toLowerCase(), role, status, pin: pin || null, failed_pin_attempts: 0, created_at: now, last_login: null };
+  return { id, email: email.trim().toLowerCase(), role, status, created_at: now, last_login: null } as PublicUser;
 }
 
 export async function setUserPin(userId: string, pin: string) {
   const { db, save } = await getDb();
-  db.run("UPDATE users SET pin = ? WHERE id = ?", [pin.trim(), userId]);
+  db.run("UPDATE users SET pin = ? WHERE id = ?", [hashPin(pin), userId]);
   save();
+}
+
+/** True if any administrator has finished setting a PIN. Used to close the first-run setup window. */
+export async function anyAdminHasPin(): Promise<boolean> {
+  const { db } = await getDb();
+  const stmt = db.prepare("SELECT 1 FROM users WHERE role = 'admin' AND pin IS NOT NULL AND pin <> '' LIMIT 1");
+  const found = stmt.step();
+  stmt.free();
+  return found;
+}
+
+/**
+ * Check a user's PIN. Upgrades a legacy plain-text PIN to a hash on success.
+ * Returns false when the user has no PIN set.
+ */
+export async function verifyUserPin(userId: string, candidate: string): Promise<boolean> {
+  const user = await getUserById(userId);
+  if (!user || !user.pin) return false;
+  const ok = pinMatches(user.pin, candidate);
+  if (ok && !isHashedPin(user.pin)) {
+    await setUserPin(userId, candidate);
+  }
+  return ok;
 }
 
 export async function incrementFailedPinAttempts(userId: string): Promise<number> {
@@ -350,7 +444,7 @@ export async function getUserBySession(sessionId: string) {
   }
 
   const stmt = db.prepare(`
-    SELECT u.* FROM sessions s
+    SELECT u.id, u.email, u.role, u.status, u.created_at, u.last_login FROM sessions s
     JOIN users u ON s.user_id = u.id
     WHERE s.session_id = ? AND s.expires_at > ?
   `);
@@ -358,14 +452,7 @@ export async function getUserBySession(sessionId: string) {
   if (stmt.step()) {
     const user = stmt.getAsObject() as any;
     stmt.free();
-    return user as {
-      id: string;
-      email: string;
-      role: 'admin' | 'user';
-      status: 'pending' | 'approved' | 'rejected';
-      created_at: number;
-      last_login: number | null;
-    };
+    return user as PublicUser;
   }
   stmt.free();
   return null;

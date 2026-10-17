@@ -62,8 +62,9 @@ If you have never deployed an app using Portainer before, follow this simple ste
 6. **Access the App**
    Once the stack status shows **Healthy** / **Running**, open your browser and navigate to:
    ```text
-   http://<your-server-ip>:3000
+   http://<your-server-ip>:3020
    ```
+   (`docker-compose.yml` publishes the app on host port **3020**.)
 
 ---
 
@@ -82,6 +83,19 @@ cp .env.example .env
 # 3. Build and launch containers
 docker compose up -d --build
 ```
+
+---
+
+## 🔒 Security Settings (optional)
+
+Set these in the `environment:` block of `docker-compose.yml` when the app sits behind a reverse proxy or HTTPS:
+
+| Variable | What it does |
+| --- | --- |
+| `TRUST_PROXY` | Set to `1` (or `true`) when a reverse proxy such as Nginx, Traefik or Cloudflare Tunnel is in front, so rate limiting sees real client IPs and HTTPS is detected. |
+| `COOKIE_SECURE` | Set to `true` to always mark the sign-in cookie HTTPS-only. Leave unset for plain-HTTP home-network use. |
+
+Only the System Owner can change settings, upload or delete models. Signed-in users can chat and use voice through the endpoints the owner configured; API keys are never sent to their browsers.
 
 ---
 

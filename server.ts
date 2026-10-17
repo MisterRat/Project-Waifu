@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import JSZip from "jszip";
 import cookieParser from "cookie-parser";
+import rateLimit from "express-rate-limit";
 import { createServer as createViteServer } from "vite";
 import { pipeline, env } from "@xenova/transformers";
 import {
@@ -34,6 +35,12 @@ import {
   getPrimaryAdminUser,
   getSystemSettings,
   saveSystemSettings,
+  getAdminSettings,
+  anyAdminHasPin,
+  verifyUserPin,
+  pinMatches,
+  toPublicUser,
+  type PublicUser,
 } from "./server/db.js";
 import {
   sendMagicLinkEmail,
@@ -80,17 +87,48 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "500mb" }));
-  app.use(express.urlencoded({ limit: "500mb", extended: true }));
+  // Behind a reverse proxy (Nginx, Traefik, Cloudflare Tunnel...) set TRUST_PROXY so that
+  // req.ip (rate limiting) and req.secure (cookie flag) reflect the real client.
+  // Accepts "true", a hop count ("1"), or an Express trust-proxy string ("loopback").
+  if (process.env.TRUST_PROXY) {
+    const tp = process.env.TRUST_PROXY;
+    app.set("trust proxy", tp === "true" ? true : /^\d+$/.test(tp) ? Number(tp) : tp);
+  }
+
+  // Body size limits: small by default. The two routes that legitimately carry large
+  // payloads parse their own bodies *after* authentication (see LARGE_BODY_ROUTES below),
+  // so anonymous callers can't make the server buffer hundreds of megabytes.
+  const LARGE_BODY_ROUTES = new Set(["/api/live2d/upload-zip", "/api/waifu/stt"]);
+  const defaultJson = express.json({ limit: "10mb" });
+  const defaultForm = express.urlencoded({ limit: "1mb", extended: true });
+  app.use((req, res, next) => (LARGE_BODY_ROUTES.has(req.path) ? next() : defaultJson(req, res, next)));
+  app.use((req, res, next) => (LARGE_BODY_ROUTES.has(req.path) ? next() : defaultForm(req, res, next)));
   app.use(cookieParser());
+
+  // Brute-force protection for sign-in routes (per client IP).
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { error: "Too many sign-in attempts. Please wait a few minutes and try again." },
+  });
+  app.use(
+    ["/api/auth/register", "/api/auth/login", "/api/auth/verify", "/api/auth/owner-pin", "/api/auth/owner-pin-login", "/api/auth/change-pin"],
+    authLimiter
+  );
 
   // Health check endpoint
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", version: appVersion, message: "Project Waifu Server Running" });
   });
 
-  // Auth helper middleware
-  const getCurrentUser = async (req: express.Request, res?: express.Response) => {
+  // ---------------------------------------------------------------------------
+  // Auth helpers
+  // ---------------------------------------------------------------------------
+  type AuthedRequest = express.Request & { user: PublicUser };
+
+  const getCurrentUser = async (req: express.Request, res?: express.Response): Promise<PublicUser | null> => {
     const sessionId = req.cookies?.waifu_session || (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : null);
     if (sessionId) {
       const user = await getUserBySession(sessionId);
@@ -102,18 +140,135 @@ async function startServer() {
     return null;
   };
 
+  /** Rejects requests without a valid session for an approved (or temporarily locked) account. */
+  const requireUser: express.RequestHandler = async (req, res, next) => {
+    try {
+      const user = await getCurrentUser(req, res);
+      if (!user || user.status === "pending" || user.status === "rejected") {
+        res.status(401).json({ error: "Unauthorized. Please log in." });
+        return;
+      }
+      (req as AuthedRequest).user = user;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  /** Rejects requests that are not from a signed-in administrator. */
+  const requireAdmin: express.RequestHandler = async (req, res, next) => {
+    try {
+      const user = await getCurrentUser(req, res);
+      if (!user || user.role !== "admin" || user.status === "pending" || user.status === "rejected") {
+        res.status(403).json({ error: "Forbidden. System Owner (admin) access required." });
+        return;
+      }
+      (req as AuthedRequest).user = user;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  const setSessionCookie = (req: express.Request, res: express.Response, sessionId: string) => {
+    res.cookie("waifu_session", sessionId, {
+      httpOnly: true,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      sameSite: "lax",
+      // Secure when the request arrived over HTTPS (needs TRUST_PROXY behind a proxy), or force with COOKIE_SECURE=true
+      secure: req.secure || process.env.COOKIE_SECURE === "true",
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // Settings visibility
+  // Admins see and edit everything. Regular users get the owner-managed endpoints
+  // with API keys blanked out; the server re-attaches the saved key when it proxies.
+  // ---------------------------------------------------------------------------
+  const redactSecrets = (settings: any) => {
+    if (!settings) return settings;
+    const copy = JSON.parse(JSON.stringify(settings));
+    if (copy.openwebuiConfig && typeof copy.openwebuiConfig === "object") copy.openwebuiConfig.apiKey = "";
+    if (copy.ttsConfig && typeof copy.ttsConfig === "object") copy.ttsConfig.openaiApiKey = "";
+    return copy;
+  };
+
+  const settingsForUser = async (user: PublicUser) => {
+    const system = await getSystemSettings();
+    const own = await getUserSettings(user.id);
+    const base = own || system;
+    if (user.role === "admin") return base;
+    return redactSecrets({
+      ...base,
+      openwebuiConfig: system.openwebuiConfig ?? base?.openwebuiConfig ?? null,
+      ttsConfig: system.ttsConfig ?? base?.ttsConfig ?? null,
+      sttConfig: system.sttConfig ?? base?.sttConfig ?? null,
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // Outbound proxy allow-list
+  // Regular users may only reach endpoints the owner saved. Admins may also reach
+  // unsaved URLs so the "Test connection" tools keep working while configuring.
+  // ---------------------------------------------------------------------------
+  type SavedEndpoint = { base: string; key: string; apiKey: string };
+  const DEFAULT_TTS_BASE = "http://localhost:8000/v1";
+
+  const normalizeBase = (raw: unknown): string | null => {
+    if (typeof raw !== "string" || !raw.trim()) return null;
+    try {
+      const url = new URL(raw.trim());
+      if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+      return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
+    } catch {
+      return null;
+    }
+  };
+
+  const savedEndpoints = async (user: PublicUser, kind: "chat" | "tts"): Promise<SavedEndpoint[]> => {
+    const sources: any[] = [await getSystemSettings(), await getAdminSettings()];
+    if (user.role === "admin") sources.push(await getUserSettings(user.id));
+    const out: SavedEndpoint[] = [];
+    for (const s of sources) {
+      if (!s) continue;
+      const rawBase = kind === "chat" ? s.openwebuiConfig?.baseUrl : s.ttsConfig?.openaiBaseUrl || DEFAULT_TTS_BASE;
+      const apiKey = (kind === "chat" ? s.openwebuiConfig?.apiKey : s.ttsConfig?.openaiApiKey) || "";
+      const base = normalizeBase(rawBase);
+      if (base) out.push({ base: rawBase.trim().replace(/\/+$/, ""), key: base.toLowerCase(), apiKey });
+    }
+    if (kind === "tts" && out.length === 0) {
+      out.push({ base: DEFAULT_TTS_BASE, key: DEFAULT_TTS_BASE.toLowerCase(), apiKey: "" });
+    }
+    return out;
+  };
+
+  /**
+   * Decide which upstream a proxy call may reach. Returns null if the caller
+   * isn't allowed to use that URL. A blank API key is filled from the saved one.
+   */
+  const resolveUpstream = async (user: PublicUser, kind: "chat" | "tts", requestedBase: unknown, requestedKey: unknown) => {
+    const normalized = normalizeBase(requestedBase);
+    if (!normalized) return null;
+    const key = typeof requestedKey === "string" ? requestedKey.trim() : "";
+    const match = (await savedEndpoints(user, kind)).find((e) => e.key === normalized.toLowerCase());
+    if (match) return { base: match.base, apiKey: key || match.apiKey };
+    if (user.role === "admin") return { base: (requestedBase as string).trim().replace(/\/+$/, ""), apiKey: key };
+    return null;
+  };
+
+  const FORBIDDEN_UPSTREAM = { error: "That server address is not one of the endpoints configured by the System Owner." };
+
   // GET /api/auth/me
   app.get("/api/auth/me", async (req, res) => {
     try {
       const user = await getCurrentUser(req, res);
       const userCount = await getUserCount();
       const adminUser = await getPrimaryAdminUser();
-      const systemSettings = await getSystemSettings();
-      const userSettings = user ? await getUserSettings(user.id) : null;
-      const settings = userSettings || systemSettings;
+      // Signed-out visitors get no settings at all (they used to receive every stored API key).
+      const settings = user ? await settingsForUser(user) : null;
 
       return res.json({
-        user,
+        user: toPublicUser(user),
         settings,
         userCount,
         hasOwner: Boolean(adminUser),
@@ -151,7 +306,9 @@ async function startServer() {
       const isFirst = count === 0;
 
       if (user) {
-        if (user.role === "admin") {
+        // Admins with a PIN must use it. An admin without one (e.g. promoted from the Admin panel)
+        // may sign in by magic link and then set a PIN in the Admin panel.
+        if (user.role === "admin" && user.pin) {
           return res.status(400).json({ error: "Administrator accounts cannot request magic links. Please sign in using your System Owner PIN." });
         }
         if (user.status === "pending") {
@@ -188,7 +345,7 @@ async function startServer() {
       // Create new user (First user automatically approved as admin)
       const role = isFirst ? "admin" : "user";
       const status = isFirst ? "approved" : "pending";
-      user = await createUser(cleanEmail, role, status);
+      const newUser = await createUser(cleanEmail, role, status);
 
       if (role === "admin") {
         return res.json({
@@ -204,7 +361,7 @@ async function startServer() {
           return res.status(400).json({ error: "SMTP email service is not configured by the Administrator. Magic links cannot be sent." });
         }
 
-        const { token: magicToken } = await createAuthToken(user.id, "magic_link");
+        const { token: magicToken } = await createAuthToken(newUser.id, "magic_link");
         const appUrl = `${req.protocol}://${req.get("host")}`;
         const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
 
@@ -251,27 +408,18 @@ async function startServer() {
       }
       lastMagicLinkRequest.set(cleanEmail, now);
 
-      const user = await getUserByEmail(cleanEmail);
-
-      if (!user) {
-        return res.status(404).json({ error: "No account found for this email. Please register first." });
-      }
-
-      if (user.role === "admin") {
-        return res.status(400).json({ error: "Administrator accounts cannot request magic links. Please sign in using your System Owner PIN." });
-      }
-
-      if (user.status === "pending") {
-        return res.status(403).json({ error: "Your account is pending approval by the Administrator." });
-      }
-
-      if (user.status === "rejected") {
-        return res.status(403).json({ error: "Your account request was declined." });
-      }
-
       const smtp = await getSmtpConfig();
       if (!smtp || !smtp.host) {
         return res.status(400).json({ error: "SMTP email service is not configured by the Administrator. Magic links cannot be sent." });
+      }
+
+      // Same answer whether or not the email has a usable account, so this route
+      // can't be used to discover which addresses are registered.
+      const genericReply = { message: "If that email has an active account, a magic link is on its way. Please check your inbox." };
+
+      const user = await getUserByEmail(cleanEmail);
+      if (!user || (user.role === "admin" && user.pin) || user.status === "pending" || user.status === "rejected") {
+        return res.json(genericReply);
       }
 
       const { token: magicToken } = await createAuthToken(user.id, "magic_link");
@@ -280,12 +428,10 @@ async function startServer() {
 
       const mailRes = await sendMagicLinkEmail(cleanEmail, magicLinkUrl);
       if (!mailRes.sent) {
-        return res.status(500).json({ error: `Failed to send Magic Link email via SMTP: ${mailRes.error || mailRes.reason || "Delivery failed"}. Please contact your administrator.` });
+        console.error("Login magic link delivery failed:", mailRes.error || mailRes.reason);
       }
 
-      return res.json({
-        message: "Magic link sent to your email address! Please check your inbox.",
-      });
+      return res.json(genericReply);
     } catch (err: any) {
       console.error("Login error:", err);
       return res.status(500).json({ error: err.message });
@@ -324,16 +470,13 @@ async function startServer() {
       await resetFailedPinAttempts(user.id);
 
       const session = await createSession(user.id);
-      res.cookie("waifu_session", session.sessionId, {
-        httpOnly: true,
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-        sameSite: "lax",
-      });
+      setSessionCookie(req, res, session.sessionId);
 
-      const settings = await getUserSettings(user.id);
+      const publicUser = toPublicUser(user)!;
+      const settings = await settingsForUser(publicUser);
 
       return res.json({
-        user,
+        user: publicUser,
         settings,
         sessionId: session.sessionId,
       });
@@ -344,31 +487,56 @@ async function startServer() {
   });
 
   // POST /api/auth/owner-pin
+  // Sets a System Owner PIN. Without an admin session this is only allowed during first-run
+  // setup: no administrator has a PIN yet, and the target is the original owner account (or
+  // there are no accounts at all). After that, only a signed-in admin can call it.
   app.post("/api/auth/owner-pin", async (req, res) => {
     try {
-      const { email, pin } = req.body;
-      if (!email || !pin || pin.trim().length < 4) {
+      const { email, pin } = req.body || {};
+      if (typeof email !== "string" || !email.includes("@") || typeof pin !== "string" || pin.trim().length < 4) {
         return res.status(400).json({ error: "Valid email and PIN (at least 4 characters) are required." });
       }
-      let user = await getUserByEmail(email);
-      if (user && user.status === "locked") {
-        return res.status(403).json({ error: "Account is locked due to 10 failed PIN attempts. Please check your email for the unlock link." });
+      const cleanEmail = email.trim().toLowerCase();
+
+      const caller = await getCurrentUser(req);
+      const callerIsAdmin = Boolean(caller && caller.role === "admin" && caller.status !== "pending" && caller.status !== "rejected");
+      let user = await getUserByEmail(cleanEmail);
+
+      if (!callerIsAdmin) {
+        const setupClosed = await anyAdminHasPin();
+        const primary = await getPrimaryAdminUser();
+        const isFirstAccount = !user && (await getUserCount()) === 0;
+        const isPrimaryOwner = Boolean(user && primary && primary.id === user.id);
+        if (setupClosed || !(isFirstAccount || isPrimaryOwner)) {
+          return res.status(403).json({ error: "A System Owner PIN has already been set up. Sign in as the owner to change PINs." });
+        }
+        if (user && user.status === "locked") {
+          return res.status(403).json({ error: "Account is locked due to 10 failed PIN attempts. Please check your email for the unlock link." });
+        }
       }
+
       if (!user) {
-        user = await createUser(email, "admin", "approved", pin.trim());
+        await createUser(cleanEmail, "admin", "approved", pin.trim());
+        user = await getUserByEmail(cleanEmail);
       } else {
         await updateUserRole(user.id, "admin");
         await setUserPin(user.id, pin.trim());
         await resetFailedPinAttempts(user.id);
       }
+      if (!user) {
+        return res.status(500).json({ error: "Failed to save the owner account." });
+      }
+
+      const updatedUser = toPublicUser(await getUserById(user.id))!;
+
+      // An admin setting a PIN for a different account stays signed in as themselves.
+      if (callerIsAdmin && caller!.id !== user.id) {
+        return res.json({ status: "ok", message: `PIN saved for ${updatedUser.email}.`, user: updatedUser });
+      }
+
       const session = await createSession(user.id);
-      res.cookie("waifu_session", session.sessionId, {
-        httpOnly: true,
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-        sameSite: "lax",
-      });
-      const settings = (await getUserSettings(user.id)) || (await getSystemSettings());
-      const updatedUser = await getUserById(user.id);
+      setSessionCookie(req, res, session.sessionId);
+      const settings = await settingsForUser(updatedUser);
       return res.json({
         status: "ok",
         message: "System Owner PIN saved successfully!",
@@ -378,68 +546,70 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("Owner PIN error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Failed to save the System Owner PIN." });
     }
   });
 
   // POST /api/auth/owner-pin-login
+  // Only checks a PIN. It never creates accounts and never promotes anyone to admin.
   app.post("/api/auth/owner-pin-login", async (req, res) => {
     try {
-      const { email, pin } = req.body;
-      if (!email || !pin) {
+      const { email, pin } = req.body || {};
+      if (typeof email !== "string" || typeof pin !== "string" || !email.trim() || !pin.trim()) {
         return res.status(400).json({ error: "Email and PIN are required." });
       }
       const cleanEmail = email.trim().toLowerCase();
-      let user = await getUserByEmail(cleanEmail);
+      const user = await getUserByEmail(cleanEmail);
+      const badCredentials = () => res.status(401).json({ error: "Incorrect email or System Owner PIN." });
 
-      if (!user) {
-        user = await createUser(cleanEmail, "admin", "approved", pin.trim());
-      } else {
-        if (user.status === "locked") {
-          return res.status(403).json({
-            error: "Account is locked due to 10 failed PIN attempts. Please check your email for the unlock link."
+      if (!user || user.role !== "admin") {
+        return badCredentials();
+      }
+
+      if (user.status === "locked") {
+        return res.status(403).json({
+          error: "Account is locked due to 10 failed PIN attempts. Please check your email for the unlock link."
+        });
+      }
+
+      if (!user.pin) {
+        // The original owner closed the browser after registering but before choosing a PIN.
+        // Let them finish setup here, but only while no admin anywhere has a PIN yet.
+        const primary = await getPrimaryAdminUser();
+        if (primary && primary.id === user.id && pin.trim().length >= 4 && !(await anyAdminHasPin())) {
+          await setUserPin(user.id, pin.trim());
+        } else {
+          return res.status(401).json({
+            error: "No System Owner PIN is set for this account yet. Sign in with a magic link, then set a PIN in the Admin panel.",
           });
         }
+      } else if (!(await verifyUserPin(user.id, pin))) {
+        const attempts = await incrementFailedPinAttempts(user.id);
+        if (attempts >= 10) {
+          await lockUser(user.id);
+          const { token: unlockToken } = await createAuthToken(user.id, "unlock");
+          const appUrl = `${req.protocol}://${req.get("host")}`;
+          const unlockUrl = `${appUrl}/?token=${unlockToken}`;
+          const mailRes = await sendAccountUnlockEmail(cleanEmail, unlockUrl);
 
-        if (user.role !== "admin") {
-          await updateUserRole(user.id, "admin");
+          return res.status(403).json({
+            error: mailRes.sent
+              ? "Incorrect PIN entered 10 times. Your account has been locked. An unlock link has been sent to your email address."
+              : `Incorrect PIN entered 10 times. Account is locked. (Failed to send email via SMTP: ${mailRes.error || mailRes.reason || "SMTP error"}).`
+          });
         }
-
-        if (!user.pin) {
-          await setUserPin(user.id, pin.trim());
-        } else if (user.pin !== pin.trim()) {
-          const attempts = await incrementFailedPinAttempts(user.id);
-          if (attempts >= 10) {
-            await lockUser(user.id);
-            const { token: unlockToken } = await createAuthToken(user.id, "unlock");
-            const appUrl = `${req.protocol}://${req.get("host")}`;
-            const unlockUrl = `${appUrl}/?token=${unlockToken}`;
-            const mailRes = await sendAccountUnlockEmail(cleanEmail, unlockUrl);
-
-            return res.status(403).json({
-              error: mailRes.sent
-                ? "Incorrect PIN entered 10 times. Your account has been locked. An unlock link has been sent to your email address."
-                : `Incorrect PIN entered 10 times. Account is locked. (Failed to send email via SMTP: ${mailRes.error || mailRes.reason || "SMTP error"}).`
-            });
-          } else {
-            const remaining = 10 - attempts;
-            return res.status(401).json({
-              error: `Incorrect System Owner PIN. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before account lockout.`
-            });
-          }
-        }
+        const remaining = 10 - attempts;
+        return res.status(401).json({
+          error: `Incorrect System Owner PIN. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before account lockout.`
+        });
       }
 
       await resetFailedPinAttempts(user.id);
 
       const session = await createSession(user.id);
-      res.cookie("waifu_session", session.sessionId, {
-        httpOnly: true,
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-        sameSite: "lax",
-      });
-      const settings = (await getUserSettings(user.id)) || (await getSystemSettings());
-      const updatedUser = await getUserById(user.id);
+      setSessionCookie(req, res, session.sessionId);
+      const updatedUser = toPublicUser(await getUserById(user.id))!;
+      const settings = await settingsForUser(updatedUser);
       return res.json({
         status: "ok",
         user: updatedUser,
@@ -448,7 +618,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("Owner PIN login error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Owner sign-in failed." });
     }
   });
 
@@ -468,21 +638,17 @@ async function startServer() {
   });
 
   // POST /api/auth/change-pin
-  app.post("/api/auth/change-pin", async (req, res) => {
+  app.post("/api/auth/change-pin", requireAdmin, async (req, res) => {
     try {
-      const user = await getCurrentUser(req);
-      if (!user || user.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden. System Owner (admin) access required." });
-      }
-
+      const user = (req as AuthedRequest).user;
       const dbUser = await getUserById(user.id);
 
-      const { currentPin, newPin } = req.body;
+      const { currentPin, newPin } = req.body || {};
       if (!newPin || typeof newPin !== "string" || newPin.trim().length < 4) {
         return res.status(400).json({ error: "New PIN must be at least 4 characters." });
       }
 
-      if (dbUser && dbUser.pin && dbUser.pin !== currentPin) {
+      if (dbUser && dbUser.pin && !pinMatches(dbUser.pin, currentPin)) {
         return res.status(401).json({ error: "Incorrect current PIN." });
       }
 
@@ -496,8 +662,8 @@ async function startServer() {
     }
   });
 
-  // GET /api/system/settings - System-wide default configurations & personas
-  app.get("/api/system/settings", async (_req, res) => {
+  // GET /api/system/settings - System-wide default configurations & personas (admin only)
+  app.get("/api/system/settings", requireAdmin, async (_req, res) => {
     try {
       const settings = await getSystemSettings();
       return res.json({ settings });
@@ -507,10 +673,11 @@ async function startServer() {
     }
   });
 
-  // POST /api/system/settings - Update system-wide configuration
-  app.post("/api/system/settings", async (req, res) => {
+  // POST /api/system/settings - Update system-wide configuration (admin only)
+  app.post("/api/system/settings", requireAdmin, async (req, res) => {
     try {
-      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig, trackingEngineEnabled } = req.body;
+      const user = (req as AuthedRequest).user;
+      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig, trackingEngineEnabled } = req.body || {};
       await saveSystemSettings({
         activeProfileId,
         waifuProfiles,
@@ -519,47 +686,6 @@ async function startServer() {
         openwebuiConfig,
         trackingEngineEnabled,
       });
-      const user = await getCurrentUser(req);
-      if (user) {
-        await saveUserSettings(user.id, {
-          activeProfileId,
-          waifuProfiles,
-          ttsConfig,
-          sttConfig,
-          openwebuiConfig,
-          trackingEngineEnabled,
-        });
-      }
-      return res.json({ status: "ok", message: "System settings successfully persisted to SQLite database." });
-    } catch (err: any) {
-      console.error("Save system settings error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-  });
-
-  // GET /api/user/settings
-  app.get("/api/user/settings", async (req, res) => {
-    try {
-      const user = await getCurrentUser(req);
-      if (!user) {
-        return res.status(401).json({ error: "Unauthorized. Please log in." });
-      }
-      const settings = (await getUserSettings(user.id)) || (await getSystemSettings());
-      return res.json({ settings });
-    } catch (err: any) {
-      console.error("Get user settings error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-  });
-
-  // POST /api/user/settings
-  app.post("/api/user/settings", async (req, res) => {
-    try {
-      const user = await getCurrentUser(req);
-      if (!user) {
-        return res.status(401).json({ error: "Unauthorized. Please log in." });
-      }
-      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig, trackingEngineEnabled } = req.body;
       await saveUserSettings(user.id, {
         activeProfileId,
         waifuProfiles,
@@ -568,16 +694,41 @@ async function startServer() {
         openwebuiConfig,
         trackingEngineEnabled,
       });
-      // Also persist to system_config so reboot retains all personas and configs
-      await saveSystemSettings({
+      return res.json({ status: "ok", message: "System settings successfully persisted to SQLite database." });
+    } catch (err: any) {
+      console.error("Save system settings error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/user/settings
+  app.get("/api/user/settings", requireUser, async (req, res) => {
+    try {
+      const settings = await settingsForUser((req as AuthedRequest).user);
+      return res.json({ settings });
+    } catch (err: any) {
+      console.error("Get user settings error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/user/settings
+  // Saves only this user's own settings. It no longer overwrites the system-wide defaults,
+  // so one user's personas and endpoints can't replace everyone else's.
+  app.post("/api/user/settings", requireUser, async (req, res) => {
+    try {
+      const user = (req as AuthedRequest).user;
+      const { activeProfileId, waifuProfiles, ttsConfig, sttConfig, openwebuiConfig, trackingEngineEnabled } = req.body || {};
+      await saveUserSettings(user.id, {
         activeProfileId,
         waifuProfiles,
         ttsConfig,
         sttConfig,
         openwebuiConfig,
-        trackingEngineEnabled,
+        // The tracking-engine switch is system-wide, so only the owner may change it.
+        trackingEngineEnabled: user.role === "admin" ? trackingEngineEnabled : undefined,
       });
-      return res.json({ status: "ok", message: "User settings and system database updated." });
+      return res.json({ status: "ok", message: "User settings saved." });
     } catch (err: any) {
       console.error("Save user settings error:", err);
       return res.status(500).json({ error: err.message });
@@ -585,12 +736,9 @@ async function startServer() {
   });
 
   // Admin APIs
-  app.get("/api/admin/users", async (req, res) => {
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
     try {
-      const currentUser = await getCurrentUser(req);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden. Admin access required." });
-      }
+      const currentUser = (req as AuthedRequest).user;
       const users = await getAllUsers();
       return res.json({ users });
     } catch (err: any) {
@@ -599,12 +747,9 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/users/:id/approve", async (req, res) => {
+  app.post("/api/admin/users/:id/approve", requireAdmin, async (req, res) => {
     try {
-      const currentUser = await getCurrentUser(req);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden. Admin access required." });
-      }
+      const currentUser = (req as AuthedRequest).user;
       const { id } = req.params;
       const targetUser = await getUserById(id);
       if (!targetUser) {
@@ -646,12 +791,9 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/users/:id/reject", async (req, res) => {
+  app.post("/api/admin/users/:id/reject", requireAdmin, async (req, res) => {
     try {
-      const currentUser = await getCurrentUser(req);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden. Admin access required." });
-      }
+      const currentUser = (req as AuthedRequest).user;
       const { id } = req.params;
       await updateUserStatus(id, "rejected");
       return res.json({ status: "ok" });
@@ -660,12 +802,9 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admin/users/:id", async (req, res) => {
+  app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
     try {
-      const currentUser = await getCurrentUser(req);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden. Admin access required." });
-      }
+      const currentUser = (req as AuthedRequest).user;
       const { id } = req.params;
       if (currentUser.id === id) {
         return res.status(400).json({ error: "You cannot delete your own admin account." });
@@ -677,12 +816,9 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/users/:id/role", async (req, res) => {
+  app.post("/api/admin/users/:id/role", requireAdmin, async (req, res) => {
     try {
-      const currentUser = await getCurrentUser(req);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden. Admin access required." });
-      }
+      const currentUser = (req as AuthedRequest).user;
       const { id } = req.params;
       const { role } = req.body;
       if (role !== "admin" && role !== "user") {
@@ -695,12 +831,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/smtp", async (req, res) => {
+  app.get("/api/admin/smtp", requireAdmin, async (req, res) => {
     try {
-      const currentUser = await getCurrentUser(req);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden. Admin access required." });
-      }
+      const currentUser = (req as AuthedRequest).user;
       const smtp = await getSmtpConfig();
       if (!smtp) {
         return res.json({
@@ -726,12 +859,9 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/smtp", async (req, res) => {
+  app.post("/api/admin/smtp", requireAdmin, async (req, res) => {
     try {
-      const currentUser = await getCurrentUser(req);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden. Admin access required." });
-      }
+      const currentUser = (req as AuthedRequest).user;
       const { host, port, secure, authUser, authPass, fromEmail, adminEmail } = req.body;
 
       const existing = await getSmtpConfig();
@@ -753,12 +883,9 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/smtp/test", async (req, res) => {
+  app.post("/api/admin/smtp/test", requireAdmin, async (req, res) => {
     try {
-      const currentUser = await getCurrentUser(req);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden. Admin access required." });
-      }
+      const currentUser = (req as AuthedRequest).user;
       const smtp = await getSmtpConfig();
       if (!smtp || !smtp.host) {
         return res.status(400).json({ error: "SMTP server host is not configured." });
@@ -781,7 +908,25 @@ async function startServer() {
   const defaultTamamoZipPath = path.join(process.cwd(), "assets", "Tamamo.zip");
   const tamamoFolderPath = path.join(MODELS_DIR, "tamamo");
 
+  // Model ids are generated server-side ("tamamo" or model_<timestamp>_<rand>); anything else is rejected.
+  const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+  // File types a Live2D model actually uses. Anything else in an uploaded zip is skipped,
+  // so a zip can't smuggle in an .html/.js/.svg page that would run on this app's origin.
+  const MODEL_ASSET_EXTENSIONS = new Set([
+    ".json", ".moc", ".moc3", ".png", ".jpg", ".jpeg", ".webp", ".mtn", ".txt", ".wav", ".mp3", ".ogg", ".m4a",
+  ]);
+  const isModelAsset = (name: string) => MODEL_ASSET_EXTENSIONS.has(path.extname(name).toLowerCase());
+
+  /** Resolve a zip entry inside baseDir, or null if it would escape it (zip-slip). */
+  const safeEntryPath = (baseDir: string, entryName: string): string | null => {
+    const root = path.resolve(baseDir);
+    const out = path.resolve(root, entryName);
+    return out.startsWith(root + path.sep) ? out : null;
+  };
+
   const ensureModelExtracted = async (modelId: string): Promise<boolean> => {
+    if (!MODEL_ID_RE.test(modelId)) return false;
     const modelFolderPath = path.join(MODELS_DIR, modelId);
     const checkModelJson = (dir: string): boolean => {
       if (!fs.existsSync(dir)) return false;
@@ -817,8 +962,9 @@ async function startServer() {
         const zipKeys = Object.keys(zip.files);
         for (const key of zipKeys) {
           const entry = zip.files[key];
-          if (entry.dir) continue;
-          const outPath = path.join(tamamoFolderPath, key);
+          if (entry.dir || !isModelAsset(key)) continue;
+          const outPath = safeEntryPath(tamamoFolderPath, key);
+          if (!outPath) continue;
           const parentDir = path.dirname(outPath);
           if (!fs.existsSync(parentDir)) {
             fs.mkdirSync(parentDir, { recursive: true });
@@ -843,8 +989,9 @@ async function startServer() {
         const zipKeys = Object.keys(zip.files);
         for (const key of zipKeys) {
           const entry = zip.files[key];
-          if (entry.dir) continue;
-          const outPath = path.join(modelFolderPath, key);
+          if (entry.dir || !isModelAsset(key)) continue;
+          const outPath = safeEntryPath(modelFolderPath, key);
+          if (!outPath) continue;
           const parentDir = path.dirname(outPath);
           if (!fs.existsSync(parentDir)) {
             fs.mkdirSync(parentDir, { recursive: true });
@@ -887,12 +1034,25 @@ async function startServer() {
     next();
   });
 
+  // Only model asset types are ever served from /models. This also covers folders extracted
+  // before uploads were filtered, which might still contain .html/.js/.svg files.
+  app.use("/models", (req, res, next) => {
+    if (!isModelAsset(req.path)) {
+      res.status(404).end();
+      return;
+    }
+    next();
+  });
+
   // Serve models directory statically with CORS headers and appropriate MIME types
   app.use(
     "/models",
     express.static(MODELS_DIR, {
       setHeaders: (res, filePath) => {
         res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        // Belt and braces: even if a document were served from here, it couldn't run scripts.
+        res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
         if (filePath.endsWith(".moc") || filePath.endsWith(".moc3")) {
           res.setHeader("Content-Type", "application/octet-stream");
         } else if (filePath.endsWith(".model3.json") || filePath.endsWith(".model.json")) {
@@ -903,7 +1063,7 @@ async function startServer() {
   );
 
   // GET /api/live2d/models - List all server-stored Live2D models
-  app.get("/api/live2d/models", async (_req, res) => {
+  app.get("/api/live2d/models", requireUser, async (_req, res) => {
     try {
       if (!fs.existsSync(MODELS_DIR)) {
         fs.mkdirSync(MODELS_DIR, { recursive: true });
@@ -963,10 +1123,10 @@ async function startServer() {
   });
 
   // POST /api/live2d/upload-zip - Unpack & store Live2D zip archive directly on server disk
-  app.post("/api/live2d/upload-zip", async (req, res) => {
+  app.post("/api/live2d/upload-zip", requireAdmin, express.json({ limit: "200mb" }), async (req, res) => {
     try {
-      const { filename, zipBase64 } = req.body;
-      if (!zipBase64) {
+      const { zipBase64 } = req.body || {};
+      if (typeof zipBase64 !== "string" || !zipBase64) {
         return res.status(400).json({ error: "Missing zipBase64 data in request body" });
       }
 
@@ -981,13 +1141,14 @@ async function startServer() {
 
       let modelJsonPath: string | null = null;
       let fileCount = 0;
+      const skippedFiles: string[] = [];
 
       const zipKeys = Object.keys(zip.files);
       for (const key of zipKeys) {
         const entry = zip.files[key];
         if (entry.dir) continue;
         const lower = key.toLowerCase();
-        if (lower.endsWith(".model3.json") || lower.endsWith(".model.json")) {
+        if ((lower.endsWith(".model3.json") || lower.endsWith(".model.json")) && safeEntryPath(modelFolderPath, key)) {
           if (!modelJsonPath || lower.endsWith(".model3.json")) {
             modelJsonPath = key;
           }
@@ -1004,8 +1165,16 @@ async function startServer() {
       for (const key of zipKeys) {
         const entry = zip.files[key];
         if (entry.dir) continue;
+        if (!isModelAsset(key)) {
+          skippedFiles.push(key);
+          continue;
+        }
 
-        const outPath = path.join(modelFolderPath, key);
+        const outPath = safeEntryPath(modelFolderPath, key);
+        if (!outPath) {
+          skippedFiles.push(key);
+          continue;
+        }
         const parentDir = path.dirname(outPath);
         if (!fs.existsSync(parentDir)) {
           fs.mkdirSync(parentDir, { recursive: true });
@@ -1031,6 +1200,7 @@ async function startServer() {
         modelName,
         modelUrl,
         fileCount,
+        skippedFiles,
       });
     } catch (err: any) {
       console.error("Error extracting Live2D zip on server:", err);
@@ -1042,10 +1212,10 @@ async function startServer() {
   });
 
   // DELETE /api/live2d/models/:id - Remove a server-stored model folder
-  app.delete("/api/live2d/models/:id", async (req, res) => {
+  app.delete("/api/live2d/models/:id", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
-      if (!id || id.includes("..") || id.includes("/") || id.includes("\\")) {
+      if (!id || !MODEL_ID_RE.test(id)) {
         return res.status(400).json({ error: "Invalid model ID" });
       }
       const targetPath = path.join(MODELS_DIR, id);
@@ -1061,20 +1231,38 @@ async function startServer() {
   });
 
   // OpenWebUI / OpenAI API Proxy Endpoint to handle CORS
-  app.post("/api/openwebui/proxy", async (req, res) => {
+  app.post("/api/openwebui/proxy", requireUser, async (req, res) => {
     try {
-      const { baseUrl, apiKey, endpoint, method = "POST", body } = req.body;
+      const user = (req as AuthedRequest).user;
+      const { baseUrl, apiKey, endpoint = "/chat/completions", method = "POST", body } = req.body || {};
       if (!baseUrl) {
         return res.status(400).json({ error: "baseUrl is required" });
       }
+      if (typeof endpoint !== "string" || (method !== "GET" && method !== "POST")) {
+        return res.status(400).json({ error: "Unsupported endpoint or method." });
+      }
+      // Regular users can only chat or list models; the owner's test tools may hit other paths.
+      const cleanEndpoint = `/${endpoint.replace(/^\/+/, "")}`;
+      if (user.role !== "admin" && cleanEndpoint !== "/chat/completions" && cleanEndpoint !== "/models") {
+        return res.status(403).json({ error: "That API endpoint is not available." });
+      }
 
-      const targetUrl = `${baseUrl.replace(/\/$/, "")}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
-      
+      const upstream = await resolveUpstream(user, "chat", baseUrl, apiKey);
+      if (!upstream) {
+        return res.status(403).json(FORBIDDEN_UPSTREAM);
+      }
+
+      // Build the URL and make sure the endpoint can't switch to a different host.
+      const targetUrl = `${upstream.base}${cleanEndpoint}`;
+      if (new URL(targetUrl).origin !== new URL(upstream.base).origin) {
+        return res.status(400).json({ error: "Invalid endpoint." });
+      }
+
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
-      if (apiKey) {
-        headers["Authorization"] = `Bearer ${apiKey}`;
+      if (upstream.apiKey) {
+        headers["Authorization"] = `Bearer ${upstream.apiKey}`;
       }
 
       const fetchOptions: RequestInit = {
@@ -1107,9 +1295,10 @@ async function startServer() {
   });
 
   // Speech-to-Text Endpoint with built-in Local Whisper STT + OpenAI-compatible STT proxy
-  app.post("/api/waifu/stt", async (req, res) => {
+  app.post("/api/waifu/stt", requireUser, express.json({ limit: "50mb" }), async (req, res) => {
     try {
-      const { pcmFloat32, audioBase64, mimeType = "audio/webm", language = "en-US", openWebUIConfig } = req.body;
+      const user = (req as AuthedRequest).user;
+      const { pcmFloat32, audioBase64, mimeType = "audio/webm", language = "en-US", openWebUIConfig } = req.body || {};
 
       if ((!pcmFloat32 || !pcmFloat32.length) && !audioBase64) {
         return res.status(400).json({ error: "No audio PCM data or audio base64 provided" });
@@ -1138,9 +1327,13 @@ async function startServer() {
       }
 
       // 2. OpenWebUI API (/audio/transcriptions) if configured and audioBase64 present
-      if (openWebUIConfig && openWebUIConfig.baseUrl && audioBase64) {
+      const sttUpstream =
+        openWebUIConfig && openWebUIConfig.baseUrl && audioBase64
+          ? await resolveUpstream(user, "chat", openWebUIConfig.baseUrl, openWebUIConfig.apiKey)
+          : null;
+      if (sttUpstream) {
         try {
-          const targetUrl = `${openWebUIConfig.baseUrl.replace(/\/$/, "")}/audio/transcriptions`;
+          const targetUrl = `${sttUpstream.base}/audio/transcriptions`;
           const audioBuffer = Buffer.from(audioBase64, "base64");
           const formData = new FormData();
           const fileBlob = new Blob([audioBuffer], { type: mimeType });
@@ -1148,8 +1341,8 @@ async function startServer() {
           formData.append("model", "whisper-1");
 
           const headers: Record<string, string> = {};
-          if (openWebUIConfig.apiKey) {
-            headers["Authorization"] = `Bearer ${openWebUIConfig.apiKey}`;
+          if (sttUpstream.apiKey) {
+            headers["Authorization"] = `Bearer ${sttUpstream.apiKey}`;
           }
 
           const owuRes = await fetch(targetUrl, {
@@ -1182,14 +1375,20 @@ async function startServer() {
   });
 
   // OpenAI-compatible Text-To-Speech Endpoint (for Kokoro, Open WebUI, or OpenAI TTS)
-  app.post("/api/waifu/tts", async (req, res) => {
+  app.post("/api/waifu/tts", requireUser, async (req, res) => {
     try {
-      const { text, baseUrl, apiKey, model, voice, speed } = req.body;
+      const user = (req as AuthedRequest).user;
+      const { text, baseUrl, apiKey, model, voice, speed } = req.body || {};
       if (!text || typeof text !== "string" || !text.trim()) {
         return res.status(400).json({ error: "No text provided for TTS" });
       }
 
-      const cleanBaseUrl = (baseUrl || "http://localhost:8000/v1").trim().replace(/\/$/, "");
+      const upstream = await resolveUpstream(user, "tts", baseUrl || DEFAULT_TTS_BASE, apiKey);
+      if (!upstream) {
+        return res.status(403).json(FORBIDDEN_UPSTREAM);
+      }
+
+      const cleanBaseUrl = upstream.base;
       let targetUrl = cleanBaseUrl;
       if (targetUrl.endsWith("/audio/speech")) {
         // Full URL already provided
@@ -1207,8 +1406,8 @@ async function startServer() {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
-      if (apiKey && apiKey.trim()) {
-        headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+      if (upstream.apiKey) {
+        headers["Authorization"] = `Bearer ${upstream.apiKey}`;
       }
 
       const response = await fetch(targetUrl, {
