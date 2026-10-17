@@ -20,6 +20,7 @@ import { EMOTION_TYPES, EmotionType, MotionType } from "../src/types";
 const args = process.argv.slice(2);
 const modelDir = args.find((a) => !a.startsWith("--"));
 const register = args.includes("--register");
+const facesOnly = args.includes("--faces-only");
 const overwrite = args.includes("--overwrite");
 if (!modelDir) {
   console.error("usage: npx tsx scripts/export-model-files.ts <model folder> [--register] [--overwrite]");
@@ -61,17 +62,27 @@ const MOTION_PARAMS: [keyof MotionPose, string][] = [
   ["bodyY", "ParamBodyAngleY"],
   ["bodyZ", "ParamBodyAngleZ"],
   ["mouthOpen", "ParamMouthOpenY"],
+  ["mouthForm", "ParamMouthForm"],
+  ["cheek", "ParamCheek"],
   ["eyeLOpen", "ParamEyeLOpen"],
   ["eyeBallX", "ParamEyeBallX"],
   ["eyeBallY", "ParamEyeBallY"],
 ];
 const round = (v: number) => Math.round(v * 1000) / 1000;
 
+// Gestures whose file has its own length (the jiggle dance runs 4 s).
+const FILE_DURATION: Partial<Record<MotionType, number>> = { jiggle_dance: 4 };
+const onlyArg = args.find((a) => a.startsWith("--only="));
+const only = onlyArg ? onlyArg.slice(7).split(",") : null;
+
 const motionFiles: Record<string, string> = {};
 for (const [motion, fileBase] of Object.entries(MOTION_FILE_NAMES) as [Exclude<MotionType, "none">, string][]) {
-  const frames = Math.round(MOTION_DURATION * FPS);
+  if (facesOnly) break;
+  if (only && !only.includes(motion)) continue;
+  const duration = FILE_DURATION[motion] ?? MOTION_DURATION;
+  const frames = Math.round(duration * FPS);
   const samples: MotionPose[] = [];
-  for (let i = 0; i <= frames; i++) samples.push(motionPose(motion, i / FPS, MOTION_DURATION));
+  for (let i = 0; i <= frames; i++) samples.push(motionPose(motion, i / FPS, duration));
 
   const curves: { Target: string; Id: string; Segments: number[] }[] = [];
   let segmentCount = 0;
@@ -99,7 +110,7 @@ for (const [motion, fileBase] of Object.entries(MOTION_FILE_NAMES) as [Exclude<M
   writeJson(rel, {
     Version: 3,
     Meta: {
-      Duration: MOTION_DURATION,
+      Duration: duration,
       Fps: FPS,
       FadeInTime: 0.3,
       FadeOutTime: 0.5,
@@ -211,10 +222,24 @@ for (const { id: emotion } of EMOTION_TYPES as { id: EmotionType }[]) {
 // ---------------------------------------------------------------------------
 if (register) {
   const refs = (model3.FileReferences = model3.FileReferences || {});
-  const motions = (refs.Motions = refs.Motions || {});
-  for (const [motion, rel] of Object.entries(motionFiles)) {
-    motions[motion] = [{ File: rel, FadeInTime: 0.3, FadeOutTime: 0.5 }];
+  // Every motion file in Motions/: Idle_* loops form the "Idle" group (played whenever
+  // nothing else is), every other file is a gesture named like Project-Waifu's tags.
+  const motions: Record<string, { File: string; FadeInTime?: number; FadeOutTime?: number }[]> = {};
+  const fileToGroup = new Map(Object.entries(MOTION_FILE_NAMES).map(([g, f]) => [f.toLowerCase(), g]));
+  const motionDir = path.join(modelDir, "Motions");
+  const motionList = fs.existsSync(motionDir) ? fs.readdirSync(motionDir).filter((f) => f.endsWith(".motion3.json")).sort() : [];
+  for (const f of motionList) {
+    const base = f.replace(/\.motion3\.json$/, "");
+    const rel = `Motions/${f}`;
+    if (/^idle_/i.test(base)) {
+      (motions.Idle = motions.Idle || []).push({ File: rel });
+    } else {
+      const group = fileToGroup.get(base.toLowerCase()) || base.toLowerCase();
+      motions[group] = [{ File: rel, FadeInTime: 0.3, FadeOutTime: 0.5 }];
+    }
   }
+  refs.Motions = motions;
+  Object.assign(motionFiles, Object.fromEntries(Object.entries(motions).map(([g, d]) => [g, d[0].File])));
   const expressions: { Name: string; File: string }[] = (refs.Expressions = refs.Expressions || []);
   for (const file of fs.readdirSync(modelDir).filter((f) => f.endsWith(".exp3.json"))) {
     if (!expressions.some((e) => e.File === file)) {

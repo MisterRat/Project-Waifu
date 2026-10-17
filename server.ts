@@ -1014,6 +1014,8 @@ async function startServer() {
         console.log("[Project Waifu] Extracting default Tamamo model from assets/Tamamo.zip...");
         const zipBuffer = fs.readFileSync(defaultTamamoZipPath);
         const zip = await JSZip.loadAsync(zipBuffer);
+        // Start clean so files dropped from the bundle don't linger.
+        fs.rmSync(tamamoFolderPath, { recursive: true, force: true });
         fs.mkdirSync(tamamoFolderPath, { recursive: true });
         const zipKeys = Object.keys(zip.files);
         for (const key of zipKeys) {

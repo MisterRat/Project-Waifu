@@ -67,6 +67,8 @@ export type MotionType =
   | "sigh_tilt"
   | "curious_glance"
   | "stretch_wave"
+  | "tilt"
+  | "tail_wag"
   | "none";
 
 export interface ChatMessage {

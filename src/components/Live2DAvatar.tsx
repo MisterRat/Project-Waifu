@@ -66,6 +66,8 @@ const MOTION_ALIAS_KEYWORDS: Record<string, string[]> = {
   sigh_tilt: ["sigh", "tilt", "troubled", "ため息"],
   curious_glance: ["curious", "glance", "look", "キョロキョロ"],
   stretch_wave: ["stretch", "wave", "伸び"],
+  tilt: ["tilt", "head_tilt", "首かしげ"],
+  tail_wag: ["tail_wag", "tail", "wag", "尻尾"],
 };
 
 interface Live2DAvatarProps {
@@ -225,6 +227,14 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const activeNativeExpressionRef = useRef<string | null>(null);
   // True while a motion file from the model itself is playing the current gesture.
   const nativeMotionPlayingRef = useRef(false);
+  // The engine's work for the current frame; run inside the model's update (see patch below).
+  const pendingKinematicsRef = useRef<(() => void) | null>(null);
+  // Parameters animated by the motion file now playing as a gesture (from its .motion3.json).
+  const nativeMotionParamsRef = useRef<Set<string>>(new Set());
+  // The model ships idle loops (motion group "Idle"): they breathe, so the engine doesn't.
+  const hasIdleMotionsRef = useRef(false);
+  // Blink start time (ms); blinks come from the idle scheduler, as in the Waifu Pet.
+  const blinkStartRef = useRef(-1e9);
 
   useEffect(() => {
     physicsIntensityRef.current = physicsIntensity ?? 1.0;
@@ -479,7 +489,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const FOLLOW_HOLD_MS = 450;
   const IDLE_AFTER_MS = 8000;
   const MOOD_HOLD_MS = 250 + 5000 + 800; // fade in + hold + fade out, as in the pet
-  const IDLE_FIDGETS: MotionType[] = ["stretch_wave", "check_nails", "curious_glance", "sigh_tilt", "nod"];
+  // Same fidget list as the Waifu Pet (renderer/pet.js FIDGET_PREFERRED).
+  const IDLE_FIDGETS: MotionType[] = [
+    "stretch_wave", "check_nails", "curious_glance", "sigh_tilt", "tilt", "wave", "nod", "tail_wag", "wink", "jiggle_dance",
+  ];
   const IDLE_MOODS: EmotionType[] = ["happy", "thinking", "tired", "smirk", "surprised", "confused", "excited"];
 
   const lastPointerMoveAtRef = useRef(0);
@@ -524,6 +537,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
     const idle = new IdleScheduler({
       now: () => performance.now(),
+      onBlink: () => {
+        blinkStartRef.current = performance.now();
+      },
       expressionNames: IDLE_MOODS,
       minExprMs: 60000,
       maxExprMs: 150000,
@@ -714,7 +730,24 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           }
 
           nativeMotionPlayingRef.current = Boolean(targetGroup);
+          nativeMotionParamsRef.current = new Set();
           if (targetGroup) {
+            // Note which parameters the file animates, so code-made layers (tail wag) step aside.
+            try {
+              const def = motionMgr?.definitions?.[targetGroup]?.[0];
+              const file = def?.File || def?.file;
+              const url = file && model.internalModel?.settings?.resolveURL ? model.internalModel.settings.resolveURL(file) : null;
+              if (url) {
+                fetch(url)
+                  .then((r) => r.json())
+                  .then((json) => {
+                    if (nativeMotionPlayingRef.current) {
+                      nativeMotionParamsRef.current = new Set((json?.Curves || []).map((c: any) => String(c.Id)));
+                    }
+                  })
+                  .catch(() => {});
+              }
+            } catch (e) {}
             if (typeof model.motion === "function") {
               const res = model.motion(targetGroup, 0, 3); // FORCE: a requested gesture interrupts
               logLive2DDiagnostic(
@@ -750,6 +783,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       setActiveMotion("none");
       motionStartTimeRef.current = null;
       nativeMotionPlayingRef.current = false;
+      nativeMotionParamsRef.current = new Set();
     }
   }, [motion]);
 
@@ -1477,10 +1511,24 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             ? Math.max(lipSync.mouthOpenY, mouthOpenRatioRef.current)
             : 0;
 
-          applyLive2DMultiJointKinematics(
+          // Blink curve from the Waifu Pet: close over 120 ms, open over 180 ms.
+          const sinceBlink = performance.now() - blinkStartRef.current;
+          const blinkFactor =
+            sinceBlink < 0 || sinceBlink > 300 ? 1 : sinceBlink < 120 ? 1 - sinceBlink / 120 : (sinceBlink - 120) / 180;
+          // A model's own expression file is the authority; the code-made face is only a fallback.
+          const faceActive = emotionRef.current !== "neutral" && !hasNativeExprs;
+          const frameNow = performance.now();
+          pendingKinematicsRef.current = () => applyLive2DMultiJointKinematics(
             core,
             trackingStateRef.current,
             {
+              faceActive,
+              blinkFactor,
+              tailWag: ![...nativeMotionParamsRef.current].some((id) => /TAIL/i.test(id)),
+              writeBreath: !hasIdleMotionsRef.current,
+              eyeLOpenOverride: motionEyeLOpenOverride,
+              motionEyeBallX: motionEyeBallXOverride ?? 0,
+              motionEyeBallY: motionEyeBallYOverride ?? 0,
               targetX: gaze.x,
               targetY: gaze.y,
               deltaTime: dt,
@@ -1537,11 +1585,38 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               mouthFormRatio: lipSync.mouthForm,
               isSpeaking: activeSpeaking,
             },
-            performance.now()
+            frameNow
           );
         };
 
         app.ticker.add(updateModelFrame);
+
+        // Run the engine inside the model's own update, right after motion files and
+        // expressions are applied and saved and before physics (Live2D's focus step,
+        // where the Waifu Pet applies gaze). Its head/body movement then layers on top
+        // of idle loops and gestures, physics reacts to the sum, and nothing piles up
+        // between frames.
+        try {
+          const im = model.internalModel;
+          const originalUpdateFocus = im.updateFocus.bind(im);
+          im.updateFocus = () => {
+            originalUpdateFocus();
+            const apply = pendingKinematicsRef.current;
+            if (apply) {
+              try {
+                apply();
+              } catch (e) {
+                // a cosmetic layer must never stop the model from drawing
+              }
+            }
+          };
+          // The built-in blink pauses whenever any motion plays; ours always runs.
+          im.eyeBlink = undefined;
+          const idleGroup = im.motionManager?.groups?.idle;
+          hasIdleMotionsRef.current = Boolean(idleGroup && (im.motionManager?.definitions?.[idleGroup] || []).length > 0);
+        } catch (e: any) {
+          logLive2DDiagnostic("cubism", `Could not attach the motion layer hook: ${e?.message}`);
+        }
 
         // Calculate responsive scale safely and center model
         const mWidth = (model.width && !isNaN(model.width) && model.width > 0) ? model.width : 400;

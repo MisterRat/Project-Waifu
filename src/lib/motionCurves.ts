@@ -17,6 +17,9 @@ export interface MotionPose {
   bodyY: number;
   bodyZ: number;
   mouthOpen: number;
+  /** Only written to motion files (the live face comes from emotions). */
+  mouthForm: number | null;
+  cheek: number | null;
   eyeLOpen: number | null;
   eyeBallX: number | null;
   eyeBallY: number | null;
@@ -24,7 +27,7 @@ export interface MotionPose {
 
 const rest = (): MotionPose => ({
   angleX: 0, angleY: 0, angleZ: 0, bodyX: 0, bodyY: 0, bodyZ: 0, mouthOpen: 0,
-  eyeLOpen: null, eyeBallX: null, eyeBallY: null,
+  mouthForm: null, cheek: null, eyeLOpen: null, eyeBallX: null, eyeBallY: null,
 });
 
 /** The pose of `motion` at `t` seconds into a gesture lasting `duration` seconds. */
@@ -68,6 +71,8 @@ export function motionPose(motion: MotionType, t: number, duration = MOTION_DURA
       p.angleX = d.angleX;
       p.angleY = d.angleY;
       p.angleZ = d.angleZ;
+      p.mouthForm = d.mouthForm;
+      p.cheek = d.cheek;
       break;
     }
     case "sigh_tilt":
@@ -83,6 +88,14 @@ export function motionPose(motion: MotionType, t: number, duration = MOTION_DURA
     case "stretch_wave":
       p.angleY = Math.sin(pRad) * 18;
       p.bodyZ = Math.sin(pRad) * 10;
+      break;
+    case "tilt":
+      p.angleZ = Math.sin(pRad) * 14;
+      p.angleY = Math.sin(pRad) * 4;
+      break;
+    case "tail_wag":
+      // The wag itself comes from the tail engine (or the model's Tail_Wag file).
+      p.angleZ = Math.sin(progress * Math.PI * 4) * 4;
       break;
   }
   return p;
@@ -100,5 +113,7 @@ export const MOTION_FILE_NAMES: Record<Exclude<MotionType, "none">, string> = {
   jiggle_dance: "Jiggle_Dance",
   sigh_tilt: "Sigh_Tilt",
   curious_glance: "Curious_Glance",
-  stretch_wave: "Stretch_Wave",
+  stretch_wave: "Stretch",
+  tilt: "Tilt",
+  tail_wag: "Tail_Wag",
 };
