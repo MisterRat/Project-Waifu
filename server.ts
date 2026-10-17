@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import JSZip from "jszip";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
@@ -944,6 +945,23 @@ async function startServer() {
   // Auto-extract assets/Tamamo.zip if present and model3.json not yet extracted
   const defaultTamamoZipPath = path.join(process.cwd(), "assets", "Tamamo.zip");
   const tamamoFolderPath = path.join(MODELS_DIR, "tamamo");
+  // The bundled Tamamo is re-extracted whenever assets/Tamamo.zip changes (new
+  // motions or expressions in an update), tracked by a fingerprint file.
+  const TAMAMO_STAMP = ".bundle-fingerprint";
+  const bundledTamamoFingerprint = (() => {
+    try {
+      return crypto.createHash("sha1").update(fs.readFileSync(defaultTamamoZipPath)).digest("hex");
+    } catch {
+      return "";
+    }
+  })();
+  const bundledTamamoIsCurrent = () => {
+    try {
+      return fs.readFileSync(path.join(tamamoFolderPath, TAMAMO_STAMP), "utf-8") === bundledTamamoFingerprint;
+    } catch {
+      return false;
+    }
+  };
 
   // Model ids are generated server-side ("tamamo" or model_<timestamp>_<rand>); anything else is rejected.
   const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -986,11 +1004,12 @@ async function startServer() {
       return hasModelJson && hasMoc;
     };
 
-    if (checkModelJson(modelFolderPath)) {
+    const isBundledTamamo = (modelId === "tamamo" || modelId === "Tamamo") && fs.existsSync(defaultTamamoZipPath);
+    if (checkModelJson(modelFolderPath) && (!isBundledTamamo || bundledTamamoIsCurrent())) {
       return true;
     }
 
-    if ((modelId === "tamamo" || modelId === "Tamamo") && fs.existsSync(defaultTamamoZipPath)) {
+    if (isBundledTamamo) {
       try {
         console.log("[Project Waifu] Extracting default Tamamo model from assets/Tamamo.zip...");
         const zipBuffer = fs.readFileSync(defaultTamamoZipPath);
@@ -1009,6 +1028,7 @@ async function startServer() {
           const contentBuffer = await entry.async("nodebuffer");
           fs.writeFileSync(outPath, contentBuffer);
         }
+        fs.writeFileSync(path.join(tamamoFolderPath, TAMAMO_STAMP), bundledTamamoFingerprint);
         return true;
       } catch (err) {
         console.error("[Project Waifu] Failed to extract Tamamo.zip:", err);

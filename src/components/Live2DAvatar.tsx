@@ -9,7 +9,8 @@ import {
 } from "../lib/live2dTrackingEngine";
 import { logLive2DDiagnostic } from "../lib/live2dDiagnosticLogger";
 import { IdleScheduler } from "../lib/idleScheduler";
-import { jiggleDancePose } from "../lib/danceMotions";
+import { motionPose } from "../lib/motionCurves";
+import { emotionFace } from "../lib/emotionFaces";
 import { lipSyncEngine } from "../lib/lipSyncEngine";
 import {
   Sparkles,
@@ -222,6 +223,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const isSpeakingRef = useRef<boolean>(isSpeaking);
   const mouthOpenRatioRef = useRef<number>(0);
   const activeNativeExpressionRef = useRef<string | null>(null);
+  // True while a motion file from the model itself is playing the current gesture.
+  const nativeMotionPlayingRef = useRef(false);
 
   useEffect(() => {
     physicsIntensityRef.current = physicsIntensity ?? 1.0;
@@ -367,7 +370,19 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           if (Array.isArray(definitions) && definitions.length > 0) {
             const keywords = EMOTION_ALIAS_KEYWORDS[emotion] || [emotion.toLowerCase()];
 
-            for (let i = 0; i < definitions.length; i++) {
+            // An expression named exactly after the emotion wins over keyword guesses
+            // (otherwise "smirk" would pick a model's Evil face via its "evil" keyword).
+            const exactIdx = definitions.findIndex((def: any) => {
+              const nameStr = String(def.name || def.Name || "").toLowerCase();
+              const base = String(def.file || def.File || "").toLowerCase().split("/").pop()?.replace(/\.(exp3|exp)\.json$/i, "") || "";
+              return nameStr === emotion || base === emotion;
+            });
+            if (exactIdx >= 0) {
+              bestIdx = exactIdx;
+              bestDef = definitions[exactIdx];
+            }
+
+            for (let i = 0; i < definitions.length && !bestDef; i++) {
               const def = definitions[i];
               const nameStr = String(def.name || def.Name || "").toLowerCase();
               const fileStr = String(def.file || def.File || "").toLowerCase();
@@ -683,7 +698,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           const availableGroups = motionMgr?.definitions ? Object.keys(motionMgr.definitions) : [];
           
           let targetGroup: string | null = null;
-          if (availableGroups.length > 0) {
+          // An exact group name (e.g. "jiggle_dance" from the shared motion files) wins;
+          // otherwise fall back to keyword matching for other models' naming.
+          const exactGroup = availableGroups.find((g) => g.toLowerCase() === String(motion).toLowerCase());
+          if (exactGroup) {
+            targetGroup = exactGroup;
+          } else if (availableGroups.length > 0) {
             const keywords = MOTION_ALIAS_KEYWORDS[motion] || [motion.toLowerCase()];
             const foundGroup = availableGroups.find((g) =>
               keywords.some((kw) => g.toLowerCase().includes(kw.toLowerCase()) || kw.toLowerCase().includes(g.toLowerCase()))
@@ -693,9 +713,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             }
           }
 
+          nativeMotionPlayingRef.current = Boolean(targetGroup);
           if (targetGroup) {
             if (typeof model.motion === "function") {
-              const res = model.motion(targetGroup);
+              const res = model.motion(targetGroup, 0, 3); // FORCE: a requested gesture interrupts
               logLive2DDiagnostic(
                 "model-file",
                 `[Model File] Executing native motion group "${targetGroup}" for motion "${motion}"`,
@@ -728,6 +749,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     } else if (motion === "none") {
       setActiveMotion("none");
       motionStartTimeRef.current = null;
+      nativeMotionPlayingRef.current = false;
     }
   }, [motion]);
 
@@ -1381,426 +1403,67 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
                 onMotionTrigger("none");
               }
             } else {
-              const progress = elapsed / duration;
-              const pRad = progress * Math.PI;
-
-              switch (activeMotionRef.current) {
-                case "nod":
-                  motionAngleY = Math.sin(progress * Math.PI * 2) * 18;
-                  break;
-                case "shake":
-                  motionAngleX = Math.sin(progress * Math.PI * 3) * 22;
-                  break;
-                case "wave":
-                  motionAngleZ = Math.sin(progress * Math.PI * 2) * 16;
-                  motionBodyAngleZ = Math.sin(progress * Math.PI * 2) * 8;
-                  break;
-                case "bow":
-                  motionAngleY = -Math.sin(pRad) * 25;
-                  break;
-                case "laugh":
-                  motionAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 12;
-                  motionMouthOpen = 0.4;
-                  break;
-                case "wink":
-                  if (progress < 0.75) {
-                    motionEyeLOpenOverride = 0;
-                  }
-                  break;
-                case "check_nails":
-                  motionAngleX = Math.sin(pRad) * 20;
-                  motionAngleY = -Math.sin(pRad) * 16;
-                  motionAngleZ = -Math.sin(pRad) * 12;
-                  motionEyeBallXOverride = Math.sin(pRad) * 0.8;
-                  motionEyeBallYOverride = -Math.sin(pRad) * 0.8;
-                  break;
-                case "jiggle_dance": {
-                  // Bouncy body hops that drive the model's chest/body physics.
-                  const pose = jiggleDancePose(elapsed, duration);
-                  motionBodyAngleX = pose.bodyX;
-                  motionBodyAngleY = pose.bodyY;
-                  motionBodyAngleZ = pose.bodyZ;
-                  motionAngleX = pose.angleX;
-                  motionAngleY = pose.angleY;
-                  motionAngleZ = pose.angleZ;
-                  break;
-                }
-                case "sigh_tilt":
-                  motionAngleZ = Math.sin(pRad) * 18;
-                  motionAngleY = Math.sin(pRad) * 14;
-                  motionMouthOpen = Math.sin(pRad) * 0.25;
-                  break;
-                case "curious_glance":
-                  motionAngleX = Math.sin(progress * Math.PI * 2) * 22;
-                  motionAngleZ = Math.sin(progress * Math.PI) * 12;
-                  motionEyeBallXOverride = Math.sin(progress * Math.PI * 2) * 0.85;
-                  break;
-                case "stretch_wave":
-                  motionAngleY = Math.sin(pRad) * 18;
-                  motionBodyAngleZ = Math.sin(pRad) * 10;
-                  break;
+              // A motion file shipped with the model plays natively; otherwise the
+              // same curve (src/lib/motionCurves.ts) is applied here.
+              if (!nativeMotionPlayingRef.current) {
+                const pose = motionPose(activeMotionRef.current, elapsed, duration);
+                motionAngleX = pose.angleX;
+                motionAngleY = pose.angleY;
+                motionAngleZ = pose.angleZ;
+                motionBodyAngleX = pose.bodyX;
+                motionBodyAngleY = pose.bodyY;
+                motionBodyAngleZ = pose.bodyZ;
+                motionMouthOpen = pose.mouthOpen;
+                motionEyeLOpenOverride = pose.eyeLOpen;
+                motionEyeBallXOverride = pose.eyeBallX;
+                motionEyeBallYOverride = pose.eyeBallY;
               }
             }
           }
 
           // 3. Evaluate emotion parameters
-          let mouthForm = 0;
-          let cheekBlush = 0;
-          let cheekPuff = 0;
-          let browLY = 0;
-          let browRY = 0;
-          let browLX = 0;
-          let browRX = 0;
-          let browLAngle = 0;
-          let browRAngle = 0;
-          let browLForm = 0;
-          let browRForm = 0;
-          let eyeLOpen = 1.0;
-          let eyeROpen = 1.0;
-          let eyeLSmile = 0;
-          let eyeRSmile = 0;
-          let eyeBallForm = 0;
-          let eyeBallX = 0;
-          let eyeBallY = 0;
-          let emotionTear = 0;
-          let emotionQuestionMark = 0;
-          let emotionExclamation = 0;
-          let emotionSweat = 0;
-          let emotionAnger = 0;
-          let emotionHeartEyes = 0;
-          let emotionStarEyes = 0;
-          let emotionDarkFace = 0;
-          let emotionParam2 = 0; // Model-specific Sad mark
-          let emotionParam3 = 0; // Model-specific Angry mark
-          let emotionParam4 = 0; // Model-specific Happy mark
-          let emotionEarRotation = 0;
-          let emotionEarInOut = 0;
-          let emotionEar1 = 0;
-          let emotionEar2 = 0;
-          let emotionEar3 = 0;
-          let emotionTailWag = 1.0;
-          let emotionMouthShrug = 0;
-          let emotionMouthFunnel = 0;
-          let emotionMouthPucker = 0;
-          let emotionMouthX = 0;
-
-          switch (emotionRef.current) {
-            case "happy":
-              mouthForm = 1.0;
-              cheekBlush = 0.5;
-              browLY = 0.4;
-              browRY = 0.4;
-              browLAngle = 0.15;
-              browRAngle = 0.15;
-              browLForm = 0.4;
-              browRForm = 0.4;
-              eyeLOpen = 0.0; // Eyes smiling closed, works with non-blend-shape
-              eyeROpen = 0.0;
-              eyeLSmile = 1.0;
-              eyeRSmile = 1.0;
-              eyeBallForm = 0.4;
-              emotionParam4 = 1.0; // Tamamo Happy mark
-              emotionEarRotation = -0.3;
-              emotionEar1 = 0.4;
-              emotionTailWag = 2.0;
-              break;
-            case "excited":
-              mouthForm = 1.0;
-              cheekBlush = 0.85;
-              eyeLOpen = 1.3;
-              eyeROpen = 1.3;
-              eyeLSmile = 0.85;
-              eyeRSmile = 0.85;
-              eyeBallForm = 0.5;
-              browLY = 0.7;
-              browRY = 0.7;
-              browLAngle = 0.2;
-              browRAngle = 0.2;
-              browLForm = 0.5;
-              browRForm = 0.5;
-              emotionStarEyes = 0.9;
-              emotionParam4 = 1.0;
-              emotionEarRotation = -0.5;
-              emotionEar1 = 0.6;
-              emotionTailWag = 2.5;
-              break;
-            case "flirty":
-              mouthForm = 0.85;
-              cheekBlush = 0.75;
-              eyeLOpen = 0.0; // Winking eye
-              eyeROpen = 1.0;
-              eyeLSmile = 1.0;
-              eyeRSmile = 0.85;
-              eyeBallForm = 0.4;
-              browLY = 0.35;
-              browRY = 0.15;
-              browLAngle = 0.25;
-              browRAngle = 0.1;
-              browLForm = 0.3;
-              browRForm = 0.3;
-              emotionHeartEyes = 1.0;
-              emotionParam4 = 0.7;
-              emotionEarRotation = 0.2;
-              emotionTailWag = 1.5;
-              break;
-            case "smirk":
-              mouthForm = 0.8;
-              emotionMouthX = 0.3;
-              cheekBlush = 0.2;
-              eyeLOpen = 0.8;
-              eyeROpen = 0.65;
-              eyeLSmile = 0.6;
-              eyeRSmile = 0.3;
-              eyeBallForm = -0.2;
-              browLY = 0.5;
-              browRY = -0.3;
-              browLAngle = 0.35;
-              browRAngle = -0.2;
-              browLForm = 0.2;
-              browRForm = -0.2;
-              emotionEarRotation = 0.3;
-              emotionEarInOut = -0.2;
-              emotionTailWag = 1.2;
-              break;
-            case "surprised":
-              mouthForm = 0.0;
-              emotionMouthFunnel = 0.6;
-              cheekBlush = 0.1;
-              eyeLOpen = 1.45;
-              eyeROpen = 1.45;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.4;
-              browLY = 0.9;
-              browRY = 0.9;
-              browLAngle = 0.0;
-              browRAngle = 0.0;
-              emotionExclamation = 1.0;
-              emotionEarRotation = -0.6;
-              emotionEar1 = 0.7;
-              emotionTailWag = 0.5;
-              break;
-            case "thinking":
-              mouthForm = 0.1;
-              emotionMouthPucker = 0.3;
-              cheekBlush = 0.1;
-              eyeLOpen = 0.85;
-              eyeROpen = 0.85;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = 0.0;
-              eyeBallX = 0.4;
-              eyeBallY = 0.45;
-              browLY = 0.65;
-              browRY = -0.35;
-              browLAngle = 0.3;
-              browRAngle = -0.2;
-              browLForm = 0.1;
-              browRForm = -0.2;
-              emotionQuestionMark = 0.7;
-              emotionEarRotation = 0.4;
-              emotionEarInOut = -0.3;
-              emotionTailWag = 0.8;
-              break;
-            case "confused":
-              mouthForm = -0.25;
-              emotionMouthShrug = 0.6;
-              cheekBlush = 0.15;
-              eyeLOpen = 1.15;
-              eyeROpen = 0.75;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.2;
-              browLY = 0.6;
-              browRY = -0.5;
-              browLAngle = -0.3;
-              browRAngle = 0.4;
-              browLForm = -0.2;
-              browRForm = 0.2;
-              emotionQuestionMark = 1.0; // Confused Question Mark Emote!
-              emotionSweat = 0.35;
-              emotionEarRotation = 0.45;
-              emotionEarInOut = -0.4;
-              emotionTailWag = 0.7;
-              break;
-            case "embarrassed":
-              mouthForm = -0.3;
-              cheekBlush = 1.0;
-              cheekPuff = 0.5;
-              eyeLOpen = 0.65;
-              eyeROpen = 0.65;
-              eyeLSmile = 0.6;
-              eyeRSmile = 0.6;
-              eyeBallForm = 0.2;
-              eyeBallY = -0.35;
-              browLY = -0.4;
-              browRY = -0.4;
-              browLAngle = -0.5;
-              browRAngle = -0.5;
-              browLForm = -0.4;
-              browRForm = -0.4;
-              emotionSweat = 0.6;
-              emotionParam4 = 0.5;
-              emotionEarRotation = 0.5;
-              emotionEarInOut = 0.3;
-              emotionTailWag = 1.6;
-              break;
-            case "tipsy":
-              mouthForm = 0.6;
-              cheekBlush = 0.95;
-              cheekPuff = 0.3;
-              eyeLOpen = 0.6;
-              eyeROpen = 0.65;
-              eyeLSmile = 0.7;
-              eyeRSmile = 0.7;
-              eyeBallForm = 0.3;
-              browLY = -0.2;
-              browRY = 0.1;
-              browLAngle = -0.3;
-              browRAngle = -0.3;
-              browLForm = -0.3;
-              browRForm = -0.3;
-              emotionParam4 = 0.6;
-              emotionEarRotation = 0.3;
-              emotionTailWag = 1.4;
-              break;
-            case "tired":
-              mouthForm = -0.4;
-              cheekBlush = 0.0;
-              eyeLOpen = 0.35;
-              eyeROpen = 0.35;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.3;
-              browLY = -0.45;
-              browRY = -0.45;
-              browLAngle = -0.4;
-              browRAngle = -0.4;
-              browLForm = -0.3;
-              browRForm = -0.3;
-              emotionSweat = 0.2;
-              emotionEarRotation = 0.5;
-              emotionEarInOut = 0.4;
-              emotionTailWag = 0.3;
-              break;
-            case "sad":
-              mouthForm = -1.0;
-              cheekBlush = 0.0;
-              eyeLOpen = 0.75;
-              eyeROpen = 0.75;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.4;
-              browLY = -0.7;
-              browRY = -0.7;
-              browLAngle = -0.6;
-              browRAngle = -0.6;
-              browLForm = -0.6;
-              browRForm = -0.6;
-              emotionTear = 1.0;
-              emotionParam2 = 1.0; // Tamamo Sad Tear mark
-              emotionEarRotation = 0.55;
-              emotionEarInOut = 0.35;
-              emotionTailWag = 0.4;
-              break;
-            case "crying":
-              mouthForm = -0.95;
-              cheekBlush = 0.6;
-              eyeLOpen = 0.35;
-              eyeROpen = 0.35;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.6;
-              browLY = -0.85;
-              browRY = -0.85;
-              browLAngle = -0.8;
-              browRAngle = -0.8;
-              browLForm = -0.7;
-              browRForm = -0.7;
-              emotionTear = 1.0;
-              emotionParam2 = 1.0; // Tamamo Sad Tear mark
-              emotionEarRotation = 0.6;
-              emotionEarInOut = 0.4;
-              emotionTailWag = 0.3;
-              break;
-            case "scared":
-              mouthForm = -0.6;
-              cheekBlush = 0.0;
-              eyeLOpen = 1.45;
-              eyeROpen = 1.45;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.7;
-              browLY = 0.85;
-              browRY = 0.85;
-              browLAngle = -0.65;
-              browRAngle = -0.65;
-              browLForm = -0.5;
-              browRForm = -0.5;
-              emotionSweat = 0.85;
-              emotionTear = 0.3;
-              emotionEarRotation = 0.6;
-              emotionEarInOut = 0.5;
-              emotionTailWag = 0.2;
-              break;
-            case "angry":
-              mouthForm = -0.85;
-              cheekBlush = 0.0;
-              eyeLOpen = 0.85;
-              eyeROpen = 0.85;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = -0.5;
-              browLY = -0.85;
-              browRY = -0.85;
-              browLAngle = 0.8;
-              browRAngle = 0.8;
-              browLForm = -0.6;
-              browRForm = -0.6;
-              emotionAnger = 1.0;
-              emotionParam3 = 1.0; // Tamamo Angry mark
-              emotionEarRotation = 0.65;
-              emotionEarInOut = -0.4;
-              emotionTailWag = 1.8;
-              break;
-            case "evil":
-              mouthForm = 0.75;
-              cheekBlush = 0.0;
-              eyeLOpen = 0.7;
-              eyeROpen = 0.7;
-              eyeLSmile = 0.3;
-              eyeRSmile = 0.3;
-              eyeBallForm = -0.4;
-              browLY = -0.7;
-              browRY = -0.7;
-              browLAngle = 0.85;
-              browRAngle = 0.85;
-              browLForm = -0.5;
-              browRForm = -0.5;
-              emotionAnger = 0.4;
-              emotionDarkFace = 0.8;
-              emotionParam3 = 0.7;
-              emotionEarRotation = 0.5;
-              emotionTailWag = 1.3;
-              break;
-            default:
-              mouthForm = 0.0;
-              cheekBlush = 0.0;
-              eyeLOpen = 1.0;
-              eyeROpen = 1.0;
-              eyeLSmile = 0.0;
-              eyeRSmile = 0.0;
-              eyeBallForm = 0.0;
-              browLY = 0.0;
-              browRY = 0.0;
-              browLAngle = 0.0;
-              browRAngle = 0.0;
-              browLForm = 0.0;
-              browRForm = 0.0;
-              emotionTear = 0.0;
-              emotionTailWag = 1.0;
-              break;
-          }
+          // Face recipe for the current emotion (src/lib/emotionFaces.ts).
+          let {
+            mouthForm,
+            cheekBlush,
+            cheekPuff,
+            browLY,
+            browRY,
+            browLX,
+            browRX,
+            browLAngle,
+            browRAngle,
+            browLForm,
+            browRForm,
+            eyeLOpen,
+            eyeROpen,
+            eyeLSmile,
+            eyeRSmile,
+            eyeBallForm,
+            eyeBallX,
+            eyeBallY,
+            emotionTear,
+            emotionQuestionMark,
+            emotionExclamation,
+            emotionSweat,
+            emotionAnger,
+            emotionHeartEyes,
+            emotionStarEyes,
+            emotionDarkFace,
+            emotionParam2,
+            emotionParam3,
+            emotionParam4,
+            emotionEarRotation,
+            emotionEarInOut,
+            emotionEar1,
+            emotionEar2,
+            emotionEar3,
+            emotionTailWag,
+            emotionMouthShrug,
+            emotionMouthFunnel,
+            emotionMouthPucker,
+            emotionMouthX,
+          } = emotionFace(emotionRef.current);
 
           if (motionEyeLOpenOverride !== null) {
             eyeLOpen = motionEyeLOpenOverride;
@@ -2039,53 +1702,12 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         const elapsed = (Date.now() - motionStartTimeRef.current) / 1000;
         const duration = 3.5;
         if (elapsed < duration) {
-          const progress = elapsed / duration;
-          const pRad = progress * Math.PI;
-
-          switch (activeMotionRef.current) {
-            case "nod":
-              motionProcAngleY = Math.sin(progress * Math.PI * 2) * 18;
-              break;
-            case "shake":
-              motionProcAngleX = Math.sin(progress * Math.PI * 3) * 22;
-              break;
-            case "wave":
-              motionProcAngleZ = Math.sin(progress * Math.PI * 2) * 16;
-              break;
-            case "bow":
-              motionProcAngleY = -Math.sin(pRad) * 25;
-              break;
-            case "laugh":
-              motionProcAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 12;
-              motionProcMouthOpen = 0.4;
-              break;
-            case "wink":
-              if (progress < 0.75) {
-                motionProcEyeLOverride = 0;
-              }
-              break;
-            case "check_nails":
-              motionProcAngleX = Math.sin(pRad) * 20;
-              motionProcAngleY = -Math.sin(pRad) * 16;
-              motionProcAngleZ = -Math.sin(pRad) * 12;
-              break;
-            case "jiggle_dance":
-              motionProcAngleZ = Math.sin(progress * Math.PI * 6) * 16;
-              motionProcAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 8;
-              break;
-            case "sigh_tilt":
-              motionProcAngleZ = Math.sin(pRad) * 18;
-              motionProcAngleY = Math.sin(pRad) * 14;
-              motionProcMouthOpen = Math.sin(pRad) * 0.25;
-              break;
-            case "curious_glance":
-              motionProcAngleX = Math.sin(progress * Math.PI * 2) * 22;
-              motionProcAngleZ = Math.sin(progress * Math.PI) * 12;
-              break;
-            case "stretch_wave":
-              motionProcAngleY = Math.sin(pRad) * 18;
-              break;
-          }
+          const pose = motionPose(activeMotionRef.current, elapsed, duration);
+          motionProcAngleX = pose.angleX;
+          motionProcAngleY = pose.angleY;
+          motionProcAngleZ = pose.angleZ;
+          motionProcEyeLOverride = pose.eyeLOpen;
+          motionProcMouthOpen = pose.mouthOpen;
         }
       }
 

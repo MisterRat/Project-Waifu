@@ -617,17 +617,21 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
           setAudioVolume(0);
           setIsSpeaking(false);
           URL.revokeObjectURL(audioUrl);
-          returnToDefault(token);
         };
 
         audio.onplay = () => {
           detachLipSync = lipSyncEngine.attachAudioElement(audio);
         };
 
-        audio.onended = cleanup;
+        audio.onended = () => {
+          cleanup();
+          returnToDefault(token);
+        };
         audio.onerror = (e) => {
           console.error("Waifu TTS audio playback error:", e);
           cleanup();
+          // No voice: keep the face up for about as long as the reply takes to read.
+          returnToDefault(token, readingTimeMs(cleanSpeech));
         };
 
         await audio.play();
