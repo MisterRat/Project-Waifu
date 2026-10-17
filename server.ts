@@ -1121,6 +1121,55 @@ async function startServer() {
     })
   );
 
+  // GET /api/live2d/model-files?url=/models/<id>/<path>.model3.json
+  // Lists the loose .exp3.json and .motion3.json files next to a stored model (paths relative to its
+  // model3.json), plus its optional waifu-faces.json, so faces and motions the model3.json doesn't
+  // declare are still used, as the Waifu Pet does.
+  app.get("/api/live2d/model-files", requireUser, async (req, res) => {
+    const url = String(req.query.url || "");
+    const m = /^\/models\/([^/]+)\/(.+)$/.exec(url.split("?")[0]);
+    if (!m || !MODEL_ID_RE.test(m[1])) return res.status(400).json({ error: "Not a stored model URL" });
+    try {
+      await ensureModelExtracted(m[1]);
+      const modelRoot = path.join(MODELS_DIR, m[1]);
+      const modelFile = safeEntryPath(modelRoot, decodeURIComponent(m[2]));
+      if (!modelFile || !fs.existsSync(modelFile)) return res.status(404).json({ error: "Model not found" });
+      const modelDir = path.dirname(modelFile);
+      const files: string[] = [];
+      const walk = (dir: string, depth: number) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory() && depth < 3) walk(full, depth + 1);
+          else if (entry.isFile() && /\.(exp3|motion3)\.json$/i.test(entry.name) && files.length < 500) {
+            files.push(path.relative(modelDir, full).split(path.sep).join("/"));
+          }
+        }
+      };
+      walk(modelDir, 0);
+      let faces: { skip: string[]; map: Record<string, string> } | null = null;
+      const facesFile = path.join(modelDir, "waifu-faces.json");
+      if (fs.existsSync(facesFile)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(facesFile, "utf8").replace(/^﻿/, ""));
+          const str = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 80;
+          faces = {
+            skip: (Array.isArray(raw?.skip) ? raw.skip : []).filter(str).slice(0, 50),
+            map: Object.fromEntries(
+              Object.entries(raw?.map && typeof raw.map === "object" ? raw.map : {})
+                .filter(([k, v]) => str(k) && str(v))
+                .slice(0, 50)
+            ) as Record<string, string>,
+          };
+        } catch (e) {
+          console.warn(`[Project Waifu] ${m[1]}/waifu-faces.json is not valid JSON; ignoring it`);
+        }
+      }
+      return res.json({ files: files.sort(), faces });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Could not list model files", details: err.message });
+    }
+  });
+
   // GET /api/live2d/models - List all server-stored Live2D models
   app.get("/api/live2d/models", requireUser, async (_req, res) => {
     try {

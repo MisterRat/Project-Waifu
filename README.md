@@ -119,7 +119,8 @@ Only the System Owner can change settings, upload or delete models. Signed-in us
 
 ### 3. ⚙️ Customizing Personas & Avatars
 - **Persona Switcher**: Quick-swap between preset AI characters or create your own custom companion.
-- **Upload Live2D Models**: Upload custom `.zip` files containing Live2D `model3.json` avatar packages to give your companion a unique look.
+- **Upload Live2D Models**: Upload custom `.zip` files containing Live2D `model3.json` avatar packages to give your companion a unique look. Face (`*.exp3.json`) and motion (`*.motion3.json`, also in a `Motions/` folder) files in the zip are used even if `model3.json` doesn't list them: files named `Idle_*` loop while she is idle, and the others play as gestures named after the file.
+- **Tuning faces without editing them**: put a `waifu-faces.json` next to the `model3.json` to skip face files or choose which face an emotion uses, e.g. `{ "skip": ["Crying"], "map": { "crying": "Sad" } }`. The Waifu Pet desktop app reads the same file.
 - **Custom System Prompts**: Tailor character personalities, backstories, tone, and greetings in the Persona Editor.
 
 ### 4. 🔗 Connecting External LLMs (OpenWebUI / Ollama / OpenAI)

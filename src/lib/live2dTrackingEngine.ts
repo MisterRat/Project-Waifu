@@ -69,9 +69,6 @@ export interface ParameterUpdateOptions {
   emotionHeartEyes?: number;
   emotionStarEyes?: number;
   emotionDarkFace?: number;
-  emotionParam2?: number; // Model specific Sad mark
-  emotionParam3?: number; // Model specific Angry mark
-  emotionParam4?: number; // Model specific Happy mark
   emotionEarRotation?: number;
   emotionEarInOut?: number;
   emotionEar1?: number;
@@ -449,16 +446,9 @@ export function applyLive2DMultiJointKinematics(
   setParam("ParamBrowLForm", "PARAM_BROW_L_FORM", options.emotionBrowLForm ?? 0);
   setParam("ParamBrowRForm", "PARAM_BROW_R_FORM", options.emotionBrowRForm ?? 0);
 
-  // Model-specific Direct Emote Marks (Tamamo Param2: Sad, Param3: Angry, Param4: Happy)
-  if (options.emotionParam2 !== undefined) {
-    setParam("Param2", "PARAM_2", options.emotionParam2);
-  }
-  if (options.emotionParam3 !== undefined) {
-    setParam("Param3", "PARAM_3", options.emotionParam3);
-  }
-  if (options.emotionParam4 !== undefined) {
-    setParam("Param4", "PARAM_4", options.emotionParam4);
-  }
+  // No mark switches by raw ID (Param2/3/4 etc.): those IDs mean different things on every
+  // model (on one they were Tamamo's marks, on another a crying overlay). A model's own marks
+  // come from its .exp3.json files.
 
   // Tears & Overlays
   setParam("ParamTear", "PARAM_TEAR", options.emotionTear ?? 0);
