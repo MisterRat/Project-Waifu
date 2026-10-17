@@ -142,6 +142,8 @@ export interface WaifuProfile {
   live2dScale?: number;
   live2dX?: number;
   live2dY?: number;
+  /** Stage height (px) live2dScale / live2dY were saved at; older saves assume 420. */
+  live2dRefHeight?: number;
   physicsIntensity?: number;
 }
 

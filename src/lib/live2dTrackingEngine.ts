@@ -15,6 +15,9 @@ export interface TrackingState {
   springY: number;
   springVx: number;
   springVy: number;
+  // Tail wag (accumulated phase so mood speed changes ease instead of jumping)
+  tailPhase: number;
+  tailSpeed: number;
 }
 
 export function createInitialTrackingState(): TrackingState {
@@ -27,6 +30,8 @@ export function createInitialTrackingState(): TrackingState {
     springY: 0,
     springVx: 0,
     springVy: 0,
+    tailPhase: 0,
+    tailSpeed: 3.0,
   };
 }
 
@@ -136,6 +141,8 @@ export function stepTrackingState(
     springY: nextSpringY,
     springVx: nextSpringVx,
     springVy: nextSpringVy,
+    tailPhase: state.tailPhase,
+    tailSpeed: state.tailSpeed,
   };
 }
 
@@ -455,13 +462,16 @@ export function applyLive2DMultiJointKinematics(
   setParam("Param38", "PARAM_38", ear3);
 
   // Fox Tail Wagging Kinematics (Param_Angle_Rotation_1_TAIL2 .. 9)
-  const tailSpeed = (options.emotionTailWag ?? 1.0) * 3.0;
-  const tailBaseAmp = Math.sin((timeMs / 1000) * tailSpeed);
+  // Same algorithm as the Waifu Pet desktop app (renderer/pet.js): one sine per
+  // segment, each lagging the previous one so the wag ripples base to tip. The
+  // phase is integrated and the speed eases toward the mood's target.
+  const tailDt = Math.min(0.1, Math.max(0, options.deltaTime || 0));
+  const tailTarget = (options.emotionTailWag ?? 1.0) * 3.0; // radians per second
+  state.tailSpeed += (tailTarget - state.tailSpeed) * Math.min(1, tailDt * 3);
+  state.tailPhase = (state.tailPhase + tailDt * state.tailSpeed) % (Math.PI * 2000);
   for (let t = 1; t <= 9; t++) {
     const tailParamId = `Param_Angle_Rotation_${t}_TAIL2`;
-    const lagPhase = t * 0.35;
-    const tailVal = Math.sin((timeMs / 1000) * tailSpeed - lagPhase) * 15.0;
-    setParam(tailParamId, tailParamId, tailVal);
+    setParam(tailParamId, tailParamId, Math.sin(state.tailPhase - t * 0.35) * 15.0);
   }
 
   // Secondary Physics & Jiggle Injection (Hair, Bust, Clothes, Ribbons)

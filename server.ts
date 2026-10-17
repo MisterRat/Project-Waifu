@@ -68,8 +68,11 @@ async function getWhisperPipeline() {
 
   whisperLoadingPromise = (async () => {
     try {
-      console.log("Loading local server Whisper STT model (Xenova/whisper-tiny)...");
-      const pipe = await pipeline("automatic-speech-recognition", "Xenova/whisper-tiny");
+      // WHISPER_MODEL picks the size: Xenova/whisper-tiny (default, fastest),
+      // Xenova/whisper-base or Xenova/whisper-small (more accurate, slower).
+      const modelName = process.env.WHISPER_MODEL || "Xenova/whisper-tiny";
+      console.log(`Loading local server Whisper STT model (${modelName})...`);
+      const pipe = await pipeline("automatic-speech-recognition", modelName);
       whisperPipeline = pipe;
       console.log("Local Whisper model loaded successfully!");
       return pipe;
@@ -1346,16 +1349,36 @@ async function startServer() {
   app.post("/api/waifu/stt", requireUser, express.json({ limit: "50mb" }), async (req, res) => {
     try {
       const user = (req as AuthedRequest).user;
-      const { pcmFloat32, audioBase64, mimeType = "audio/webm", language = "en-US", openWebUIConfig } = req.body || {};
+      const { pcmFloat32, pcmBase64, audioBase64, mimeType = "audio/webm", language = "en-US", openWebUIConfig } = req.body || {};
 
-      if ((!pcmFloat32 || !pcmFloat32.length) && !audioBase64) {
+      // 16 kHz mono PCM: either a JSON number array (push-to-talk) or base64
+      // Float32 (conversation mode, ~5x smaller).
+      let pcm: Float32Array | null = null;
+      if (typeof pcmBase64 === "string" && pcmBase64) {
+        const buf = Buffer.from(pcmBase64, "base64");
+        pcm = new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength - (buf.byteLength % 4)));
+      } else if (Array.isArray(pcmFloat32) && pcmFloat32.length > 0) {
+        pcm = new Float32Array(pcmFloat32);
+      }
+
+      if (!pcm && !audioBase64) {
         return res.status(400).json({ error: "No audio PCM data or audio base64 provided" });
       }
 
+      // Near-silent clips are where Whisper invents words ("you", "thank you"), so skip them.
+      if (pcm && pcm.length > 0) {
+        let sum = 0;
+        for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+        const rms = Math.sqrt(sum / pcm.length);
+        if (rms < 0.003) {
+          return res.json({ text: "", skipped: "silence" });
+        }
+      }
+
       // 1. Built-in Local Server Whisper STT (No external keys/APIs needed!)
-      if (pcmFloat32 && Array.isArray(pcmFloat32) && pcmFloat32.length > 0) {
+      if (pcm && pcm.length > 0) {
         try {
-          const audioData = new Float32Array(pcmFloat32);
+          const audioData = pcm;
           const pipe = await getWhisperPipeline();
           const langCode = language ? language.split("-")[0].toLowerCase() : "english";
           
@@ -1364,9 +1387,10 @@ async function startServer() {
             task: "transcribe",
           });
 
-          if (result && result.text) {
-            const text = result.text.trim();
-            console.log("[Local Whisper STT Success]:", text);
+          if (result && typeof result.text === "string") {
+            // Drop Whisper's non-speech markers such as [BLANK_AUDIO] or (music).
+            const text = result.text.replace(/\[[^\]]*\]|\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+            console.log("[Local Whisper STT Success]:", text || "(no speech)");
             return res.json({ text });
           }
         } catch (whisperErr: any) {

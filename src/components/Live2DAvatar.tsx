@@ -8,6 +8,7 @@ import {
   TrackingState,
 } from "../lib/live2dTrackingEngine";
 import { logLive2DDiagnostic } from "../lib/live2dDiagnosticLogger";
+import { IdleScheduler } from "../lib/idleScheduler";
 import { lipSyncEngine } from "../lib/lipSyncEngine";
 import {
   Sparkles,
@@ -82,7 +83,12 @@ interface Live2DAvatarProps {
   initialScale?: number;
   initialX?: number;
   initialY?: number;
-  onTransformChange?: (scale: number, x: number, y: number) => void;
+  /** refHeight: the stage height these values were set at, so framing survives resizes. */
+  onTransformChange?: (scale: number, x: number, y: number, refHeight: number) => void;
+  /** Stage height the saved initialScale / initialY were set at (older saves: 420 px). */
+  initialRefHeight?: number;
+  /** Fill the parent as a full stage: no inner header, no floating drag/resize. */
+  fill?: boolean;
 }
 
 const isMobileDevice = () => {
@@ -113,6 +119,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   initialX,
   initialY,
   onTransformChange,
+  initialRefHeight,
+  fill = false,
 }) => {
   const pixiCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const proceduralCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -121,6 +129,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
   const pixiAppRef = useRef<any>(null);
   const live2dModelRef = useRef<any>(null);
+  // Stage height the model's current scale/y were set for. When the stage grows or
+  // shrinks, scale and y are rescaled by the same ratio so her framing holds.
+  const frameHeightRef = useRef<number>(0);
 
   const isPanningRef = useRef(false);
   const isZoomingRef = useRef(false);
@@ -436,7 +447,112 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
   useEffect(() => {
     isSpeakingRef.current = isSpeaking;
+    lastInteractionAtRef.current = performance.now();
   }, [isSpeaking]);
+
+  // ---------------------------------------------------------------------------
+  // Gaze and idle behavior — same rules as the Waifu Pet desktop app
+  // (renderer/pet.js + renderer/idle.js); keep the two in sync.
+  //  * She looks at the mouse only WHILE IT MOVES (and FOLLOW_HOLD_MS after),
+  //    then returns to looking forward.
+  //  * She looks forward while she is talking.
+  //  * While idle (not talking, nothing happened for 8 s, no reaction playing)
+  //    she glances to the side now and then, fidgets with a small motion, and
+  //    occasionally shows a mild mood that lapses back to neutral.
+  // ---------------------------------------------------------------------------
+  const FOLLOW_HOLD_MS = 450;
+  const IDLE_AFTER_MS = 8000;
+  const MOOD_HOLD_MS = 250 + 5000 + 800; // fade in + hold + fade out, as in the pet
+  const IDLE_FIDGETS: MotionType[] = ["stretch_wave", "check_nails", "curious_glance", "sigh_tilt", "nod"];
+  const IDLE_MOODS: EmotionType[] = ["happy", "thinking", "tired", "smirk", "surprised", "confused", "excited"];
+
+  const lastPointerMoveAtRef = useRef(0);
+  const lastInteractionAtRef = useRef(performance.now());
+  const reactionUntilRef = useRef(0);
+  const glanceRef = useRef<{ x: number; y: number; until: number } | null>(null);
+  const idleMoodRef = useRef<EmotionType | null>(null);
+  const onEmotionChangeRef = useRef(onEmotionChange);
+  const onMotionTriggerRef = useRef(onMotionTrigger);
+  onEmotionChangeRef.current = onEmotionChange;
+  onMotionTriggerRef.current = onMotionTrigger;
+
+  /** Where she should look this frame, in -1..1 (0,0 = straight ahead). */
+  const gazeTarget = (now: number): { x: number; y: number } => {
+    const talking = isSpeakingRef.current;
+    if (trackingEngineEnabledRef.current && !talking && now - lastPointerMoveAtRef.current < FOLLOW_HOLD_MS) {
+      return mouseTargetRef.current;
+    }
+    const g = glanceRef.current;
+    if (g && now < g.until && !talking) return { x: g.x, y: g.y };
+    return { x: 0, y: 0 };
+  };
+
+  const markInteraction = () => {
+    lastInteractionAtRef.current = performance.now();
+  };
+
+  useEffect(() => {
+    // A reaction (from chat or idle) blocks idle fidgets until it has played out.
+    if (motion && motion !== "none") reactionUntilRef.current = performance.now() + 5000;
+  }, [motion]);
+
+  useEffect(() => {
+    // Anything other than our own idle mood counts as activity.
+    if (emotion !== idleMoodRef.current) {
+      idleMoodRef.current = null;
+      if (emotion !== "neutral") markInteraction();
+    }
+  }, [emotion]);
+
+  useEffect(() => {
+    const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
+    const idle = new IdleScheduler({
+      now: () => performance.now(),
+      expressionNames: IDLE_MOODS,
+      minExprMs: 60000,
+      maxExprMs: 150000,
+      canIdle: () => {
+        const now = performance.now();
+        return (
+          !isSpeakingRef.current &&
+          !isPanningRef.current &&
+          emotionRef.current === "neutral" &&
+          activeMotionRef.current === "none" &&
+          now - lastInteractionAtRef.current > IDLE_AFTER_MS &&
+          now > reactionUntilRef.current
+        );
+      },
+      onFidget: () => {
+        reactionUntilRef.current = performance.now() + 5000;
+        onMotionTriggerRef.current?.(pick(IDLE_FIDGETS));
+      },
+      onGlance: () => {
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        glanceRef.current = {
+          x: dir * (0.25 + Math.random() * 0.45),
+          y: (Math.random() - 0.4) * 0.5,
+          until: performance.now() + 700 + Math.random() * 900,
+        };
+      },
+      onExpression: (name) => {
+        const mood = name as EmotionType;
+        idleMoodRef.current = mood;
+        onEmotionChangeRef.current?.(mood);
+        setTimeout(() => {
+          if (idleMoodRef.current === mood && emotionRef.current === mood) {
+            idleMoodRef.current = null;
+            onEmotionChangeRef.current?.("neutral");
+          }
+        }, MOOD_HOLD_MS);
+      },
+    });
+    idle.start();
+    const timer = window.setInterval(() => idle.tick(), 100);
+    return () => {
+      idle.stop();
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     mouthOpenRatioRef.current = mouthOpenRatio;
@@ -450,13 +566,17 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         mouseTargetRef.current = { x: 0, y: 0 };
         return;
       }
-      const rect = containerRef.current.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const relX = (e.clientX - centerX) / (rect.width / 2);
-      const relY = (e.clientY - centerY) / (rect.height / 2);
-      const clampedX = Math.max(-1.5, Math.min(1.5, relX));
-      const clampedY = Math.max(-1.5, Math.min(1.5, relY));
+      lastPointerMoveAtRef.current = performance.now();
+      // Measured from her eyes, full deflection ~30% of the screen away (as in the pet).
+      const area = displayAreaRef.current || containerRef.current;
+      const rect = area.getBoundingClientRect();
+      const model = live2dModelRef.current;
+      const eyeX = rect.left + (model ? model.x : rect.width / 2);
+      const eyeY = rect.top + (model ? model.y - model.height * 0.28 : rect.height * 0.35);
+      const rangeX = Math.max(200, window.innerWidth * 0.3);
+      const rangeY = Math.max(200, window.innerHeight * 0.3);
+      const clampedX = Math.max(-1, Math.min(1, (e.clientX - eyeX) / rangeX));
+      const clampedY = Math.max(-1, Math.min(1, (e.clientY - eyeY) / rangeY));
       mouseTargetRef.current = { x: clampedX, y: clampedY };
       setMousePos({ x: Math.max(-1, Math.min(1, clampedX)), y: Math.max(-1, Math.min(1, clampedY)) });
     };
@@ -720,6 +840,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   }, [isSpeaking, live2dStatus]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    markInteraction();
     if (e.button === 0) {
       isPanningRef.current = true;
       dragStartRef.current = {
@@ -752,7 +873,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       const containerW = displayAreaRef.current?.clientWidth || containerRef.current?.clientWidth || 480;
       live2dModelRef.current.x = containerW / 2;
       live2dModelRef.current.y = dragStartRef.current.modelY + dy;
-      onTransformChange?.(live2dModelRef.current.scale.x, live2dModelRef.current.x, live2dModelRef.current.y);
+      onTransformChange?.(live2dModelRef.current.scale.x, live2dModelRef.current.x, live2dModelRef.current.y, frameHeightRef.current);
     } else if (isZoomingRef.current && live2dModelRef.current) {
       const dy = zoomStartRef.current.y - e.clientY;
       const scaleFactor = Math.pow(1.01, dy);
@@ -761,7 +882,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       live2dModelRef.current.x = containerW / 2;
       live2dModelRef.current.scale.set(newScale);
       setZoomLevel(newScale);
-      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
+      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y, frameHeightRef.current);
     }
   };
 
@@ -783,6 +904,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   // - 1 finger: No intercept. User scrolls the page up/down naturally without being trapped.
   // - 2 fingers: Move (pan) and pinch-zoom the model simultaneously.
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    markInteraction();
     if (e.touches.length === 2) {
       isPanningRef.current = true;
       isZoomingRef.current = true;
@@ -831,7 +953,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       live2dModelRef.current.x = containerW / 2;
       live2dModelRef.current.y = touchStartRef.current.modelY + dy;
 
-      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
+      onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y, frameHeightRef.current);
     }
   };
 
@@ -841,6 +963,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    markInteraction();
     e.preventDefault();
     if (!live2dModelRef.current) return;
     const currentScale = live2dModelRef.current.scale.x;
@@ -850,7 +973,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
     live2dModelRef.current.x = containerW / 2;
     live2dModelRef.current.scale.set(newScale);
     setZoomLevel(newScale);
-    onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y);
+    onTransformChange?.(newScale, live2dModelRef.current.x, live2dModelRef.current.y, frameHeightRef.current);
   };
 
   // Live2D PixiJS WebGL Model Mount Engine
@@ -925,8 +1048,9 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
       try {
         if (!containerRef.current || !pixiCanvasRef.current) return;
 
-        const width = containerRef.current.clientWidth || 480;
-        const height = containerRef.current.clientHeight || 520;
+        const stageEl = displayAreaRef.current || containerRef.current;
+        const width = stageEl.clientWidth || 480;
+        const height = stageEl.clientHeight || 520;
 
         if (PIXI.settings && PIXI.ENV && PIXI.ENV.WEBGL_LEGACY) {
           PIXI.settings.PREFER_ENV = PIXI.ENV.WEBGL_LEGACY;
@@ -1224,10 +1348,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           const dt = Math.min(0.05, Math.max(0.001, (app.ticker.deltaMS || 16.6) / 1000));
 
           // 1. Step damped spring tracking state
+          const gaze = gazeTarget(performance.now());
           trackingStateRef.current = stepTrackingState(
             trackingStateRef.current,
-            mouseTargetRef.current.x,
-            mouseTargetRef.current.y,
+            gaze.x,
+            gaze.y,
             dt,
             physicsIntensityRef.current
           );
@@ -1684,8 +1809,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             core,
             trackingStateRef.current,
             {
-              targetX: mouseTargetRef.current.x,
-              targetY: mouseTargetRef.current.y,
+              targetX: gaze.x,
+              targetY: gaze.y,
               deltaTime: dt,
               physicsIntensity: physicsIntensityRef.current,
               trackingEngineEnabled: trackingEngineEnabledRef.current,
@@ -1747,19 +1872,31 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         // Calculate responsive scale safely and center model
         const mWidth = (model.width && !isNaN(model.width) && model.width > 0) ? model.width : 400;
         const mHeight = (model.height && !isNaN(model.height) && model.height > 0) ? model.height : 600;
-        let fitScale = Math.min((width * 0.85) / mWidth, (height * 0.9) / mHeight);
+        // Tall, narrow stages (phones) fill the width and sit her near the top, so her
+        // face stays visible when the keyboard or the conversation sheet covers the bottom.
+        const tallStage = height / Math.max(1, width) > 1.25;
+        let fitScale = tallStage
+          ? Math.min((width * 1.0) / mWidth, (height * 0.9) / mHeight)
+          : Math.min((width * 0.85) / mWidth, (height * 0.9) / mHeight);
         if (isNaN(fitScale) || fitScale <= 0 || fitScale === Infinity) {
           fitScale = 0.25;
         }
+        const defaultY = tallStage
+          ? Math.max(56, height * 0.07) + (mHeight * fitScale) / 2
+          : height / 2 + 15;
 
         if (model.anchor && typeof model.anchor.set === "function") {
           model.anchor.set(0.5, 0.5);
         }
 
-        const finalScale = (initialScale !== undefined && !isNaN(initialScale) && initialScale > 0) ? initialScale : fitScale;
+        // Saved framing is converted from the stage height it was saved at.
+        const savedRef = initialRefHeight && initialRefHeight > 0 ? initialRefHeight : 420;
+        const toStage = height / savedRef;
+        const finalScale = (initialScale !== undefined && !isNaN(initialScale) && initialScale > 0) ? initialScale * toStage : fitScale;
         const containerW = displayAreaRef.current?.clientWidth || width;
         const finalX = containerW / 2;
-        const finalY = (initialY !== undefined && !isNaN(initialY)) ? initialY : (height / 2 + 15);
+        const finalY = (initialY !== undefined && !isNaN(initialY)) ? initialY * toStage : defaultY;
+        frameHeightRef.current = height;
 
         model.scale.set(finalScale);
         model.x = finalX;
@@ -1767,12 +1904,31 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         setZoomLevel(finalScale);
 
         // Add ResizeObserver for horizontal centering in container
+        // Keep her framed as the stage changes size. On touch devices, a shorter
+        // stage at the same width is the on-screen keyboard: keep scale and y
+        // (her head stays where it was, the bottom is cropped). Otherwise scale
+        // and y follow the stage height.
+        let lastStageW = width;
+        let tallestAtWidth = height;
         resizeObserver = new ResizeObserver((entries) => {
           if (model && app && entries[0].contentRect.width > 0) {
             const containerWidth = entries[0].contentRect.width;
             const containerHeight = entries[0].contentRect.height;
             app.renderer.resize(containerWidth, containerHeight);
             model.x = containerWidth / 2;
+            if (containerHeight > 0) {
+              const keyboardAware = isMobileDevice() && Math.abs(containerWidth - lastStageW) < 2;
+              tallestAtWidth = keyboardAware ? Math.max(tallestAtWidth, containerHeight) : containerHeight;
+              lastStageW = containerWidth;
+              const base = frameHeightRef.current || tallestAtWidth;
+              if (Math.abs(tallestAtWidth - base) > 1) {
+                const ratio = tallestAtWidth / base;
+                model.scale.set(model.scale.x * ratio);
+                model.y = model.y * ratio;
+                frameHeightRef.current = tallestAtWidth;
+                setZoomLevel(model.scale.x);
+              }
+            }
           }
         });
         if (displayAreaRef.current) {
@@ -2162,20 +2318,29 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   return (
     <div
       ref={containerRef}
-      onMouseUp={isMobile ? undefined : handleResizeSave}
-      style={{
-        transform: isMobile ? undefined : `translate(${pos.x}px, ${pos.y}px)`,
-        position: "relative",
-        zIndex: isDraggingWindow ? 30 : 10,
-        width: isMobile ? "100%" : (size.width || undefined),
-        height: isMobile ? undefined : (size.height || undefined),
-        maxWidth: "100%",
-      }}
-      className={`w-full max-w-full mx-auto bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-2xl min-w-0 min-h-[380px] ${
-        isMobile ? "resize-none" : "lg:resize lg:min-w-[300px] lg:min-h-[400px]"
-      }`}
+      onMouseUp={isMobile || fill ? undefined : handleResizeSave}
+      style={
+        fill
+          ? undefined
+          : {
+              transform: isMobile ? undefined : `translate(${pos.x}px, ${pos.y}px)`,
+              position: "relative",
+              zIndex: isDraggingWindow ? 30 : 10,
+              width: isMobile ? "100%" : (size.width || undefined),
+              height: isMobile ? undefined : (size.height || undefined),
+              maxWidth: "100%",
+            }
+      }
+      className={
+        fill
+          ? "relative w-full h-full min-w-0 min-h-0 flex flex-col overflow-hidden bg-slate-950"
+          : `w-full max-w-full mx-auto bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-2xl min-w-0 min-h-[380px] ${
+              isMobile ? "resize-none" : "lg:resize lg:min-w-[300px] lg:min-h-[400px]"
+            }`
+      }
     >
       {/* Top Header Bar */}
+      {!fill && (
       <div
         onMouseDown={isMobile ? undefined : handleHeaderMouseDown}
         onTouchStart={isMobile ? undefined : handleHeaderTouchStart}
@@ -2205,6 +2370,7 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           </span>
         </div>
       </div>
+      )}
 
       {/* Interactive Display Area */}
       <div
@@ -2217,8 +2383,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
         onTouchMove={handleTouchMoveCanvas}
         onTouchEnd={handleTouchEndCanvas}
         onWheel={handleWheel}
-        style={{ touchAction: "pan-y" }}
-        className="relative w-full h-[420px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group flex-1 touch-pan-y"
+        style={{ touchAction: fill ? "none" : "pan-y" }}
+        className={`relative w-full ${fill ? "h-full min-h-0" : "h-[420px]"} bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden group flex-1 ${fill ? "" : "touch-pan-y"}`}
       >
         {/* Canvas for WebGL Live2D Model */}
         <canvas
