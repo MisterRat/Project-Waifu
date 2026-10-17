@@ -27,6 +27,8 @@ An interactive, customizable Web-based AI Companion application featuring **Live
 
 ## 🚀 How to Deploy with Portainer (From GitHub)
 
+GitHub builds this app into a ready-made Docker image every time `main` changes and publishes it at `ghcr.io/misterrat/project-waifu`. Portainer just downloads that image and starts it, so nothing is built on your server. This also works when Portainer manages the server through a **Portainer Agent**, where building on the server fails with `http2: frame too large`.
+
 If you have never deployed an app using Portainer before, follow this simple step-by-step guide.
 
 ### Prerequisites
@@ -57,7 +59,7 @@ If you have never deployed an app using Portainer before, follow this simple ste
 
 5. **Deploy the Stack**
    - Click **Deploy the stack** at the bottom of the page.
-   - Portainer will clone the GitHub repository, build the Docker image, and launch the container.
+   - Portainer reads the stack file from GitHub, downloads the published image, and launches the container.
 
 6. **Access the App**
    Once the stack status shows **Healthy** / **Running**, open your browser and navigate to:
@@ -65,6 +67,13 @@ If you have never deployed an app using Portainer before, follow this simple ste
    http://<your-server-ip>:3020
    ```
    (`docker-compose.yml` publishes the app on host port **3020**.)
+
+7. **Updating**
+   Open the stack, click **Pull and redeploy**, and make sure **Re-pull image** is switched on. Portainer downloads the newest image GitHub built from `main`.
+
+**Where your data is kept:** accounts, settings and uploaded Live2D models are stored in the Docker volume `project-waifu_waifu_data` on that server. It is kept across redeploys and updates. Moving to another server starts with an empty volume, so re-upload your models in the Admin panel there.
+
+**Servers on your network:** `host.docker.internal` inside the container means *the server running Docker*. If your AI chat, speech-to-text or text-to-speech servers run on a different computer, enter that computer's IP address in Settings instead of `localhost` or `host.docker.internal`.
 
 ---
 
@@ -80,8 +89,10 @@ cd Project-Waifu
 # 2. (Optional) Copy .env.example if you wish to pre-configure keys
 cp .env.example .env
 
-# 3. Build and launch containers
-docker compose up -d --build
+# 3. Launch using the published image...
+docker compose up -d
+#    ...or build the image yourself
+docker compose -f docker-compose.build.yml up -d --build
 ```
 
 ---

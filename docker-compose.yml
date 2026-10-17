@@ -1,10 +1,13 @@
-version: '3.8'
-
+# Push-button deploy: in Portainer, add a stack with Build method "Repository",
+# point it at this repo, compose path docker-compose.yml. The image is built by
+# GitHub Actions on every push to main and published to ghcr.io, so Portainer
+# only pulls it (no build on the server). Settings, accounts and uploaded models
+# live in the named volume below and survive redeploys.
+# To build locally instead: docker compose -f docker-compose.build.yml up -d --build
 services:
   project-waifu:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/misterrat/project-waifu:latest
+    pull_policy: always
     container_name: project-waifu
     restart: unless-stopped
     ports:

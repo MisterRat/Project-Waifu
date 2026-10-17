@@ -1,5 +1,7 @@
 # Multi-stage Dockerfile for Project Waifu App
-FROM node:20-slim AS builder
+# The build output is plain JavaScript, so this stage always runs on the build
+# machine's own CPU type, even when producing an image for another (e.g. ARM).
+FROM --platform=$BUILDPLATFORM node:20-slim AS builder
 
 WORKDIR /app
 
