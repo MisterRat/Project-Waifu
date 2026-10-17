@@ -3,6 +3,7 @@ import { TTSConfig, STTConfig } from "../types";
 import { Mic, MicOff, Volume2, Play, Radio, Loader2, Save, Check } from "lucide-react";
 import { fetchOpenAITTSAudioBlob } from "../lib/openaiTts";
 import { lipSyncEngine } from "../lib/lipSyncEngine";
+import { parseEmotionAndMotionTags } from "../lib/tagParser";
 
 interface VoicePipelineTesterProps {
   ttsConfig: TTSConfig;
@@ -281,10 +282,7 @@ export const VoicePipelineTester: React.FC<VoicePipelineTesterProps> = ({
     if (ttsConfig.provider === "openai") {
       setIsSynthesizing(true);
 
-      const cleanText = testSpeechText.replace(
-        /^\[(angry|confused|crying|embarrassed|evil|excited|flirty|happy|sad|scared|smirk|surprised|thinking|tipsy|tired|blush|neutral)\]\s*/i,
-        ""
-      );
+      const cleanText = parseEmotionAndMotionTags(testSpeechText).cleanText;
 
       try {
         const blob = await fetchOpenAITTSAudioBlob({
