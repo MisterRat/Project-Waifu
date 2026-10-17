@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { EmotionType, MotionType, EMOTION_TYPES } from "../types";
 import { loadLive2DFromZip, resolveLive2DModelUrl, zipModelRegistry, normalizePath } from "../lib/live2dZipLoader";
+import { fetchStoredModelFiles, registerModelFiles, parseFacesConfig, mappedFace, faceFileName, type FacesConfig, type ModelFileList } from "../lib/modelFiles";
 import {
   createInitialTrackingState,
   stepTrackingState,
@@ -225,6 +226,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
   const isSpeakingRef = useRef<boolean>(isSpeaking);
   const mouthOpenRatioRef = useRef<number>(0);
   const activeNativeExpressionRef = useRef<string | null>(null);
+  // The model's waifu-faces.json (faces to skip, emotion -> face file), if it has one.
+  const facesConfigRef = useRef<FacesConfig | null>(null);
   // True while a motion file from the model itself is playing the current gesture.
   const nativeMotionPlayingRef = useRef(false);
   // The engine's work for the current frame; run inside the model's update (see patch below).
@@ -382,11 +385,23 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
             // An expression named exactly after the emotion wins over keyword guesses
             // (otherwise "smirk" would pick a model's Evil face via its "evil" keyword).
-            const exactIdx = definitions.findIndex((def: any) => {
-              const nameStr = String(def.name || def.Name || "").toLowerCase();
-              const base = String(def.file || def.File || "").toLowerCase().split("/").pop()?.replace(/\.(exp3|exp)\.json$/i, "") || "";
-              return nameStr === emotion || base === emotion;
-            });
+            // waifu-faces.json can name the face file for an emotion; that wins over everything.
+            const mapped = mappedFace(facesConfigRef.current, emotion)?.toLowerCase();
+            const mappedIdx = mapped
+              ? definitions.findIndex(
+                  (def: any) =>
+                    String(def.name || def.Name || "").toLowerCase() === mapped ||
+                    faceFileName(def.file || def.File).toLowerCase() === mapped
+                )
+              : -1;
+            const exactIdx =
+              mappedIdx >= 0
+                ? mappedIdx
+                : definitions.findIndex((def: any) => {
+                    const nameStr = String(def.name || def.Name || "").toLowerCase();
+                    const base = String(def.file || def.File || "").toLowerCase().split("/").pop()?.replace(/\.(exp3|exp)\.json$/i, "") || "";
+                    return nameStr === emotion || base === emotion;
+                  });
             if (exactIdx >= 0) {
               bestIdx = exactIdx;
               bestDef = definitions[exactIdx];
@@ -1132,6 +1147,11 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           pixiAppRef.current = app;
         } else {
           app = pixiAppRef.current;
+          // The previous load's cleanup stopped the ticker; without a restart the new model
+          // would never update or draw.
+          try {
+            app.ticker.start();
+          } catch (e) {}
           // Clear any previous model from stage
           if (live2dModelRef.current) {
             try {
@@ -1357,6 +1377,37 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         app.stage.addChild(model);
 
+        // Loose face and motion files next to the model (and its waifu-faces.json): the Waifu Pet
+        // uses these too, so a model's own files play even when its model3.json doesn't list them.
+        facesConfigRef.current = null;
+        try {
+          let list: ModelFileList | null = null;
+          if (reg && reg.pathMap) {
+            const keys = Object.keys(reg.pathMap).filter((k) => !k.startsWith("blob:"));
+            const facesKey = keys.find((k) => /(^|\/)waifu-faces\.json$/i.test(k));
+            let faces: FacesConfig | null = null;
+            if (facesKey) {
+              try {
+                faces = parseFacesConfig(await (await fetch(reg.pathMap[facesKey])).json());
+              } catch (e) {}
+            }
+            list = { files: keys.filter((k) => /\.(exp3|motion3)\.json$/i.test(k)).map(normalizePath), faces };
+          } else {
+            list = await fetchStoredModelFiles(customModelUrl || actualModelUrl);
+          }
+          if (list) {
+            facesConfigRef.current = list.faces;
+            const added = registerModelFiles(model, list);
+            logLive2DDiagnostic(
+              "model-file",
+              `[Model File Discovery] Registered ${added.faces} loose face file(s) and ${added.motions} motion file(s)` +
+                (added.skipped.length ? `; skipping ${added.skipped.join(", ")} (waifu-faces.json)` : "")
+            );
+          }
+        } catch (e: any) {
+          logLive2DDiagnostic("model-file", `[Model File Discovery] Could not list the model's files: ${e?.message}`);
+        }
+
         // Introspect and log model capabilities (all parameter IDs, expression definitions, motion definitions)
         try {
           const core = model.internalModel?.coreModel;
@@ -1484,9 +1535,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
             emotionHeartEyes,
             emotionStarEyes,
             emotionDarkFace,
-            emotionParam2,
-            emotionParam3,
-            emotionParam4,
             emotionEarRotation,
             emotionEarInOut,
             emotionEar1,
@@ -1561,9 +1609,6 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               emotionHeartEyes,
               emotionStarEyes,
               emotionDarkFace,
-              emotionParam2,
-              emotionParam3,
-              emotionParam4,
               emotionEarRotation,
               emotionEarInOut,
               emotionEar1,
