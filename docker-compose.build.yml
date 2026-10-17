@@ -1,0 +1,16 @@
+# Same as docker-compose.yml, but builds the image from this folder instead of
+# pulling the published one. Use from the command line:
+#   docker compose -f docker-compose.build.yml up -d --build
+services:
+  project-waifu:
+    extends:
+      file: docker-compose.yml
+      service: project-waifu
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: project-waifu:local
+    pull_policy: build
+
+volumes:
+  waifu_data:
