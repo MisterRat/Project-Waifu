@@ -9,6 +9,7 @@ import {
 } from "../lib/live2dTrackingEngine";
 import { logLive2DDiagnostic } from "../lib/live2dDiagnosticLogger";
 import { IdleScheduler } from "../lib/idleScheduler";
+import { jiggleDancePose } from "../lib/danceMotions";
 import { lipSyncEngine } from "../lib/lipSyncEngine";
 import {
   Sparkles,
@@ -1361,6 +1362,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           let motionAngleX = 0;
           let motionAngleY = 0;
           let motionAngleZ = 0;
+          let motionBodyAngleX = 0;
+          let motionBodyAngleY = 0;
           let motionBodyAngleZ = 0;
           let motionMouthOpen = 0;
           let motionEyeLOpenOverride: number | null = null;
@@ -1411,11 +1414,17 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
                   motionEyeBallXOverride = Math.sin(pRad) * 0.8;
                   motionEyeBallYOverride = -Math.sin(pRad) * 0.8;
                   break;
-                case "jiggle_dance":
-                  motionAngleZ = Math.sin(progress * Math.PI * 6) * 16;
-                  motionBodyAngleZ = Math.sin(progress * Math.PI * 6) * 12;
-                  motionAngleY = Math.abs(Math.sin(progress * Math.PI * 6)) * 8;
+                case "jiggle_dance": {
+                  // Bouncy body hops that drive the model's chest/body physics.
+                  const pose = jiggleDancePose(elapsed, duration);
+                  motionBodyAngleX = pose.bodyX;
+                  motionBodyAngleY = pose.bodyY;
+                  motionBodyAngleZ = pose.bodyZ;
+                  motionAngleX = pose.angleX;
+                  motionAngleY = pose.angleY;
+                  motionAngleZ = pose.angleZ;
                   break;
+                }
                 case "sigh_tilt":
                   motionAngleZ = Math.sin(pRad) * 18;
                   motionAngleY = Math.sin(pRad) * 14;
@@ -1857,6 +1866,8 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
               motionAngleX,
               motionAngleY,
               motionAngleZ,
+              motionBodyAngleX,
+              motionBodyAngleY,
               motionBodyAngleZ,
               motionMouthOpen,
               mouthOpenRatio: currentMouthOpen,
@@ -1937,6 +1948,10 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
 
         live2dModelRef.current = model;
         pixiAppRef.current = app;
+        // ?live2dDebug in the URL exposes the model for inspecting parameters in the console.
+        if (new URLSearchParams(window.location.search).has("live2dDebug")) {
+          (window as any).__live2dModel = model;
+        }
 
         if (isSubscribed) {
           setLive2dStatus("active");

@@ -85,6 +85,8 @@ export interface ParameterUpdateOptions {
   motionAngleX?: number;
   motionAngleY?: number;
   motionAngleZ?: number;
+  motionBodyAngleX?: number;
+  motionBodyAngleY?: number;
   motionBodyAngleZ?: number;
   motionMouthOpen?: number;
   mouthOpenRatio?: number;
@@ -171,6 +173,8 @@ export function applyLive2DMultiJointKinematics(
     motionAngleX = 0,
     motionAngleY = 0,
     motionAngleZ = 0,
+    motionBodyAngleX = 0,
+    motionBodyAngleY = 0,
     motionBodyAngleZ = 0,
     motionMouthOpen = 0,
     mouthOpenRatio = 0,
@@ -196,10 +200,10 @@ export function applyLive2DMultiJointKinematics(
   const angleZ = dynamicTilt + motionAngleZ;
 
   // 4. Body Yaw (ParamBodyAngleX): Upper torso turns with head (approx 35% of head angle)
-  const bodyAngleX = lookX * 10.0 + (effectiveVx * 0.08 * physicsIntensity);
+  const bodyAngleX = lookX * 10.0 + (effectiveVx * 0.08 * physicsIntensity) + motionBodyAngleX;
 
   // 5. Body Pitch / Lean (ParamBodyAngleY): Torso leans forward / backward
-  const bodyAngleY = -lookY * 8.0;
+  const bodyAngleY = -lookY * 8.0 + motionBodyAngleY;
 
   // 6. Body Roll / Tilt (ParamBodyAngleZ): Spine lateral sway
   const dynamicBodyTilt = -lookX * 8.0 + (effectiveVx * 0.04 * physicsIntensity);
