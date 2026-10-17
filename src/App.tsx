@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { DEFAULT_TTS_BASE_URL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from "./lib/voiceDefaults";
 import { OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile, User, EmotionType, MotionType } from "./types";
 import { OpenWebUITester } from "./components/OpenWebUITester";
 import { VoicePipelineTester } from "./components/VoicePipelineTester";
@@ -65,10 +66,10 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
   rate: 1.0,
   volume: 1.0,
   customServerUrl: "http://localhost:8000/api/tts",
-  openaiBaseUrl: "http://localhost:8000/v1",
+  openaiBaseUrl: DEFAULT_TTS_BASE_URL,
   openaiApiKey: "",
-  openaiModel: "kokoro",
-  openaiVoice: "af_bella(.1)+zf_xiaoni(.9)",
+  openaiModel: DEFAULT_TTS_MODEL,
+  openaiVoice: DEFAULT_TTS_VOICE,
 };
 
 const getInitialTTSConfig = (): TTSConfig => {

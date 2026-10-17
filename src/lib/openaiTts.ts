@@ -1,3 +1,5 @@
+import { DEFAULT_TTS_BASE_URL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from "./voiceDefaults";
+
 export interface OpenAITTSParams {
   text: string;
   baseUrl?: string;
@@ -10,10 +12,10 @@ export interface OpenAITTSParams {
 export async function fetchOpenAITTSAudioBlob(params: OpenAITTSParams): Promise<Blob> {
   const {
     text,
-    baseUrl = "http://localhost:8000/v1",
+    baseUrl = DEFAULT_TTS_BASE_URL,
     apiKey = "",
-    model = "kokoro",
-    voice = "af_bella(.1)+zf_xiaoni(.9)",
+    model = DEFAULT_TTS_MODEL,
+    voice = DEFAULT_TTS_VOICE,
     speed = 1.0,
   } = params;
 
@@ -27,8 +29,8 @@ export async function fetchOpenAITTSAudioBlob(params: OpenAITTSParams): Promise<
     targetUrl = `${targetUrl}/v1/audio/speech`;
   }
 
-  const voiceToUse = voice && voice.trim() ? voice.trim() : "af_bella(.1)+zf_xiaoni(.9)";
-  const modelToUse = model && model.trim() ? model.trim() : "kokoro";
+  const voiceToUse = voice && voice.trim() ? voice.trim() : DEFAULT_TTS_VOICE;
+  const modelToUse = model && model.trim() ? model.trim() : DEFAULT_TTS_MODEL;
 
   const isLocalhost = cleanBaseUrl.includes("localhost") || cleanBaseUrl.includes("127.0.0.1");
 

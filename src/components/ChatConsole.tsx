@@ -4,6 +4,7 @@ import { ChatMessage, EmotionType, MotionType, OpenWebUIConfig, TTSConfig, STTCo
 import { fetchOpenAITTSAudioBlob } from "../lib/openaiTts";
 import { lipSyncEngine } from "../lib/lipSyncEngine";
 import { parseEmotionAndMotionTags } from "../lib/tagParser";
+import { DEFAULT_TTS_BASE_URL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from "../lib/voiceDefaults";
 import { createConversationListener, cleanTranscript, float32ToBase64, ConversationListener, ListenerState } from "../lib/conversationMode";
 import { Live2DAvatar } from "./Live2DAvatar";
 import { PersonaEditorModal } from "./PersonaEditorModal";
@@ -595,10 +596,10 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
       try {
         const blob = await fetchOpenAITTSAudioBlob({
           text: cleanSpeech,
-          baseUrl: ttsConfig.openaiBaseUrl || "http://localhost:8000/v1",
+          baseUrl: ttsConfig.openaiBaseUrl || DEFAULT_TTS_BASE_URL,
           apiKey: ttsConfig.openaiApiKey || "",
-          model: ttsConfig.openaiModel || "kokoro",
-          voice: activeProfile.ttsVoice || ttsConfig.openaiVoice || "af_bella(.1)+zf_xiaoni(.9)",
+          model: ttsConfig.openaiModel || DEFAULT_TTS_MODEL,
+          voice: activeProfile.ttsVoice || ttsConfig.openaiVoice || DEFAULT_TTS_VOICE,
           speed: activeProfile.ttsRate || ttsConfig.rate || 1.0,
         });
 

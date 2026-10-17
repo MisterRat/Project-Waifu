@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { DEFAULT_TTS_VOICE } from "../lib/voiceDefaults";
 import { WaifuProfile } from "../types";
 import { loadLive2DFromZip } from "../lib/live2dZipLoader";
 import { Settings2, Plus, Trash2, RotateCcw, Check, Sparkles, UserCheck, Bot, Volume2, Globe, FileArchive, Upload, Loader2, MessageSquare, Activity, Flame } from "lucide-react";
@@ -148,7 +149,7 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
         "You are a loving anime AI companion. Keep answers short (1-3 sentences) and use emotion tags like [happy], [excited], [flirty], [smirk], [surprised], [thinking], [confused], [embarrassed], [tipsy], [tired], [sad], [crying], [scared], [angry], [evil].",
       greetingMessage: "[happy] Hello master! I'm your custom AI companion. How are you feeling today?",
       live2dModelUrl: "",
-      ttsVoice: "en-US-AnaNeural",
+      ttsVoice: "", // blank = app default voice
       ttsPitch: 1.2,
       ttsRate: 1.0,
       themeColor: "pink",
@@ -557,7 +558,7 @@ export const PersonaEditorModal: React.FC<PersonaEditorModalProps> = ({
                   type="text"
                   value={formData.ttsVoice}
                   onChange={(e) => setFormData({ ...formData, ttsVoice: e.target.value })}
-                  placeholder="af_bella(.1)+zf_xiaoni(.9)"
+                  placeholder={`Blank = app default (${DEFAULT_TTS_VOICE})`}
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-violet-200"
                 />
               </div>

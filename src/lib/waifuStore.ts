@@ -1,4 +1,5 @@
 import { WaifuProfile, ChatMessage } from "../types";
+import { TAMAMO_TTS_VOICE } from "./voiceDefaults";
 
 export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
   {
@@ -10,7 +11,7 @@ export const DEFAULT_WAIFU_PROFILES: WaifuProfile[] = [
     greetingMessage:
       "[happy] Konnichiwa, Master! I am Tamamo, your devoted AI companion. So wonderful to meet you! How may I assist you today?",
     live2dModelUrl: "/models/tamamo/Tamamo.model3.json",
-    ttsVoice: "en-US-AnaNeural",
+    ttsVoice: TAMAMO_TTS_VOICE,
     ttsPitch: 1.2,
     ttsRate: 1.0,
     themeColor: "pink",
@@ -44,6 +45,11 @@ export function sanitizeProfiles(profiles: WaifuProfile[]): WaifuProfile[] {
     return DEFAULT_WAIFU_PROFILES;
   }
   let cleaned = profiles.filter((p: WaifuProfile) => p && p.id !== "shizuku" && p.id !== "aoi" && p.id !== "kei");
+  // The built-in Tamamo shipped with an Edge TTS voice name Kokoro doesn't know;
+  // move her to her Kokoro voice unless it was changed by hand.
+  cleaned = cleaned.map((p: WaifuProfile) =>
+    p.id === "tamamo" && (!p.ttsVoice || p.ttsVoice === "en-US-AnaNeural") ? { ...p, ttsVoice: TAMAMO_TTS_VOICE } : p
+  );
   const hasTamamo = cleaned.some((p: WaifuProfile) => p.id === "tamamo");
   if (!hasTamamo) {
     cleaned = [DEFAULT_WAIFU_PROFILES[0], ...cleaned];

@@ -48,6 +48,7 @@ import {
   sendAccountUnlockEmail,
   testSmtpConnection,
 } from "./server/mailer.js";
+import { DEFAULT_TTS_BASE_URL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from "./src/lib/voiceDefaults.js";
 
 // Configure Transformers.js for Node runtime
 env.allowLocalModels = false;
@@ -215,7 +216,7 @@ async function startServer() {
   // unsaved URLs so the "Test connection" tools keep working while configuring.
   // ---------------------------------------------------------------------------
   type SavedEndpoint = { base: string; key: string; apiKey: string };
-  const DEFAULT_TTS_BASE = "http://localhost:8000/v1";
+  const DEFAULT_TTS_BASE = DEFAULT_TTS_BASE_URL;
 
   const normalizeBase = (raw: unknown): string | null => {
     if (typeof raw !== "string" || !raw.trim()) return null;
@@ -1470,8 +1471,8 @@ async function startServer() {
         targetUrl = `${targetUrl}/v1/audio/speech`;
       }
 
-      const voiceToUse = voice && voice.trim() ? voice.trim() : "af_bella(.1)+zf_xiaoni(.9)";
-      const modelToUse = model && model.trim() ? model.trim() : "kokoro";
+      const voiceToUse = voice && voice.trim() ? voice.trim() : DEFAULT_TTS_VOICE;
+      const modelToUse = model && model.trim() ? model.trim() : DEFAULT_TTS_MODEL;
 
       console.log(`[TTS Proxy] Requesting speech from ${targetUrl} (model: ${modelToUse}, voice: ${voiceToUse})`);
 
