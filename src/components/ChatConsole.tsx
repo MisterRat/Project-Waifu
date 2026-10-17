@@ -992,7 +992,9 @@ export const ChatConsole: React.FC<ChatConsoleProps> = ({
                     </div>
                   </div>
 
-                  <p className="whitespace-pre-wrap">{msg.text}</p>
+                  <p className="whitespace-pre-wrap">
+                    {msg.sender === "waifu" ? parseEmotionAndMotionTags(msg.text).cleanText : msg.text}
+                  </p>
                 </div>
               </div>
             ))}
