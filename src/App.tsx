@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { DEFAULT_TTS_BASE_URL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from "./lib/voiceDefaults";
 import { OpenWebUIConfig, TTSConfig, STTConfig, WaifuProfile, User, EmotionType, MotionType } from "./types";
 import { OpenWebUITester } from "./components/OpenWebUITester";
@@ -253,8 +253,34 @@ export default function App() {
     }
   };
 
+  // Settings saves go out one at a time, in order; while one is in flight only the newest pending
+  // payload is kept, so a burst of slider changes ends in exactly one save of the final value.
+  const syncInFlightRef = useRef(false);
+  const syncPendingRef = useRef<any>(null);
+
+  const postSettings = async (payload: any) => {
+    const savedToken = localStorage.getItem("waifu_session_token") || "";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (savedToken) {
+      headers["Authorization"] = `Bearer ${savedToken}`;
+    }
+    const body = JSON.stringify(payload);
+    // The admin endpoint saves both the system defaults and the admin's own settings.
+    const url = currentUser?.role === "admin" ? "/api/system/settings" : "/api/user/settings";
+    if (!currentUser) return;
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body,
+      credentials: "include",
+      // Lets the last save finish even if the page is closed or reloaded right after.
+      keepalive: body.length < 60000,
+    });
+    if (!res.ok) throw new Error(`Saving settings failed (${res.status})`);
+  };
+
   const syncSettingsToServer = async (overrides?: any) => {
-    const payload = {
+    syncPendingRef.current = {
       activeProfileId: overrides?.activeProfileId || activeProfileId,
       waifuProfiles: overrides?.waifuProfiles || profiles,
       ttsConfig: overrides?.ttsConfig || ttsConfig,
@@ -262,33 +288,20 @@ export default function App() {
       openwebuiConfig: overrides?.openwebuiConfig || openWebUIConfig,
       trackingEngineEnabled: overrides?.trackingEngineEnabled !== undefined ? overrides.trackingEngineEnabled : trackingEngineEnabled,
     };
-
-    const savedToken = localStorage.getItem("waifu_session_token") || "";
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (savedToken) {
-      headers["Authorization"] = `Bearer ${savedToken}`;
-    }
-
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
     try {
-      // Sync to system-level SQLite database
-      await fetch("/api/system/settings", {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-        credentials: "include",
-      });
-
-      // If user logged in, also sync to user_settings
-      if (currentUser) {
-        await fetch("/api/user/settings", {
-          method: "POST",
-          headers,
-          body: JSON.stringify(payload),
-          credentials: "include",
-        });
+      while (syncPendingRef.current) {
+        const payload = syncPendingRef.current;
+        syncPendingRef.current = null;
+        try {
+          await postSettings(payload);
+        } catch (e) {
+          console.error("Failed to sync settings to server:", e);
+        }
       }
-    } catch (e) {
-      console.error("Failed to sync settings to server:", e);
+    } finally {
+      syncInFlightRef.current = false;
     }
   };
 
