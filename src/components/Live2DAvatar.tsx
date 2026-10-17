@@ -1614,6 +1614,21 @@ export const Live2DAvatar: React.FC<Live2DAvatarProps> = ({
           im.eyeBlink = undefined;
           const idleGroup = im.motionManager?.groups?.idle;
           hasIdleMotionsRef.current = Boolean(idleGroup && (im.motionManager?.definitions?.[idleGroup] || []).length > 0);
+          // Idle loops play in random order, but never the same one twice in a row
+          // (same rule as the Waifu Pet's playIdle).
+          const mgr = im.motionManager;
+          if (mgr && idleGroup && typeof mgr.startRandomMotion === "function") {
+            const originalRandom = mgr.startRandomMotion.bind(mgr);
+            let lastIdle = -1;
+            mgr.startRandomMotion = (group: string, priority?: number) => {
+              const count = (mgr.definitions?.[group] || []).length;
+              if (group !== idleGroup || count < 2) return originalRandom(group, priority);
+              let i = Math.floor(Math.random() * (count - 1));
+              if (i >= lastIdle && lastIdle >= 0) i++;
+              lastIdle = i;
+              return mgr.startMotion(group, i, priority);
+            };
+          }
         } catch (e: any) {
           logLive2DDiagnostic("cubism", `Could not attach the motion layer hook: ${e?.message}`);
         }
