@@ -143,9 +143,9 @@ Only the System Owner can change settings, upload or delete models. Signed-in us
 
 ## 📄 License & Attributions
 
-The code is distributed under the MIT License. Feel free to modify and share it!
+The code is distributed under the [MIT License](LICENSE). Feel free to modify and share it!
 
-**The Tamamo model (`assets/Tamamo.zip`) is not covered by the MIT License. It was commissioned by MisterRat, who owns all rights to it, including commercial rights. All rights reserved: it is not licensed for reuse, modification or redistribution outside this project.**
+**The Tamamo model (`assets/Tamamo.zip`) is not covered by the MIT License. It was commissioned by MisterRat, who owns all rights to it, including commercial rights. All rights reserved: it is not licensed for reuse, modification or redistribution outside this project.** See `assets/Tamamo-LICENSE.txt`.
 
 ### 📚 Open Source Attributions & Acknowledgments
 
