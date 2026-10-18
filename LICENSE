@@ -19,15 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-Exception: the Tamamo model
-
-The MIT License above does not apply to the Tamamo Live2D model, which is
-distributed with this project as assets/Tamamo.zip (and any files extracted
-from it, including its textures, model, physics, expression and motion files).
-
-The Tamamo model was commissioned by MisterRat, who owns all rights to it,
-including commercial rights. All rights reserved. It is included only so that
-this project runs out of the box; it is not licensed for reuse, modification
-or redistribution outside this project.

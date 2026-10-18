@@ -68,8 +68,6 @@ If you have never deployed an app using Portainer before, follow this simple ste
    ```
    (`docker-compose.yml` publishes the app on host port **3020**.)
 
-   **First run:** the sign-in window shows **System Owner Setup**. It needs a one-time setup token that the server prints in its log (in Portainer: the container's **Logs**), looking like `One-time setup token: ABCD-EFGH-JKLM`. Enter it with your email and a new owner PIN. Only someone who can read the server log can claim the owner account, and the token stops working once the owner PIN is set.
-
 7. **Updating**
    Open the stack, click **Pull and redeploy**, and make sure **Re-pull image** is switched on. Portainer downloads the newest image GitHub built from `main`.
 
@@ -145,9 +143,9 @@ Only the System Owner can change settings, upload or delete models. Signed-in us
 
 ## 📄 License & Attributions
 
-The code is distributed under the MIT License (see [`LICENSE`](LICENSE)). Feel free to modify and share it!
+The code is distributed under the [MIT License](LICENSE). Feel free to modify and share it!
 
-**The Tamamo model (`assets/Tamamo.zip`) is not covered by the MIT License. It was commissioned by MisterRat, who owns all rights to it, including commercial rights. All rights reserved: it is not licensed for reuse, modification or redistribution outside this project.**
+**The Tamamo model (`assets/Tamamo.zip`) is not covered by the MIT License. It was commissioned by MisterRat, who owns all rights to it, including commercial rights. All rights reserved: it is not licensed for reuse, modification or redistribution outside this project.** See `assets/Tamamo-LICENSE.txt`.
 
 ### 📚 Open Source Attributions & Acknowledgments
 
