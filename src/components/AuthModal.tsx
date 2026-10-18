@@ -8,8 +8,9 @@ interface AuthModalProps {
   currentUser: User | null;
   userCount: number;
   hasOwner?: boolean;
-  ownerEmail?: string | null;
-  onLoginSuccess: (user: User, settings?: any, sessionId?: string) => void;
+  /** No System Owner PIN exists yet: show System Owner Setup, which needs the setup token from the server log. */
+  setupRequired?: boolean;
+  onLoginSuccess: (user: User, settings?: any) => void;
   onLogout: () => void;
 }
 
@@ -19,15 +20,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   currentUser,
   userCount,
   hasOwner,
-  ownerEmail,
+  setupRequired,
   onLoginSuccess,
   onLogout,
 }) => {
-  const [email, setEmail] = useState(ownerEmail || "");
+  const [email, setEmail] = useState("");
   const [ownerPin, setOwnerPin] = useState("");
+  const [setupToken, setSetupToken] = useState("");
   const [pinOrToken, setPinOrToken] = useState("");
   const [authMode, setAuthMode] = useState<"magic" | "owner_pin">(
-    userCount === 0 || hasOwner ? "owner_pin" : "magic"
+    setupRequired || hasOwner ? "owner_pin" : "magic"
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,12 +43,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       handleVerifyToken(tokenFromUrl);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-    if (userCount === 0) {
+    if (setupRequired) {
       setAuthMode("owner_pin");
-    } else if (hasOwner && !email && ownerEmail) {
-      setEmail(ownerEmail);
     }
-  }, [userCount, hasOwner, ownerEmail]);
+  }, [userCount, hasOwner, setupRequired]);
 
   if (!isOpen) return null;
 
@@ -98,31 +98,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setError("Please enter a secure PIN (at least 4 characters).");
       return;
     }
+    if (!setupToken.trim()) {
+      setError("Enter the one-time setup token from the server (container) log.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
     setMessage(null);
 
     try {
-      const regRes = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-        credentials: "include",
-      });
-      const regData = await regRes.json();
-      if (!regRes.ok) throw new Error(regData.error || "Failed to register owner.");
-
+      // One step: the setup token from the server log proves this is the server's owner.
       const res = await fetch("/api/auth/owner-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), pin: ownerPin.trim() }),
+        body: JSON.stringify({ email: email.trim(), pin: ownerPin.trim(), setupToken: setupToken.trim() }),
         credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to set owner PIN.");
 
-      onLoginSuccess(data.user, data.settings, data.sessionId);
+      onLoginSuccess(data.user, data.settings);
       onClose();
     } catch (err: any) {
       setError(err.message || "Failed to setup System Owner PIN.");
@@ -151,7 +147,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Incorrect PIN or not an admin account.");
 
-      onLoginSuccess(data.user, data.settings, data.sessionId);
+      onLoginSuccess(data.user, data.settings);
       onClose();
     } catch (err: any) {
       setError(err.message || "Owner login failed.");
@@ -249,11 +245,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           ) : (
             <>
-              {userCount === 0 && (
+              {setupRequired && (
                 <div className="p-3 bg-amber-950/30 border border-amber-800/40 rounded-xl text-xs text-amber-200/90 flex items-start gap-2.5 mb-2">
                   <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <div>
-                    <strong className="font-semibold text-amber-300">System Owner Setup:</strong> Set your persistent owner PIN to initialize system administrator access.
+                    <strong className="font-semibold text-amber-300">System Owner Setup:</strong> Set your owner PIN to initialize system administrator access. You need the one-time setup token printed in the server (container) log.
                   </div>
                 </div>
               )}
@@ -274,7 +270,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               {authMode === "owner_pin" ? (
                 /* System Owner PIN Form (Setup or Login) */
-                <form onSubmit={userCount === 0 ? handleOwnerPinSetup : handleOwnerPinLogin} className="space-y-4">
+                <form onSubmit={setupRequired ? handleOwnerPinSetup : handleOwnerPinLogin} className="space-y-4">
                   <div>
                     <label className="block text-xs font-mono text-slate-300 mb-1.5">
                       System Owner Email
@@ -294,7 +290,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-mono text-slate-300 mb-1.5">
-                      {userCount === 0 ? "Set Owner Login PIN (Min 4 chars)" : "Owner Login PIN"}
+                      {setupRequired ? "Set Owner Login PIN (Min 4 chars)" : "Owner Login PIN"}
                     </label>
                     <div className="relative">
                       <Lock className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
@@ -309,6 +305,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </div>
                   </div>
 
+                  {setupRequired && (
+                    <div>
+                      <label className="block text-xs font-mono text-slate-300 mb-1.5">
+                        Setup Token (from the server log)
+                      </label>
+                      <div className="relative">
+                        <Key className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
+                        <input
+                          type="text"
+                          value={setupToken}
+                          onChange={(e) => setSetupToken(e.target.value)}
+                          placeholder="ABCD-EFGH-JKLM"
+                          autoComplete="off"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-sm text-slate-100 font-mono placeholder-slate-600 focus:outline-none focus:border-violet-500/60"
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     disabled={loading}
@@ -318,13 +334,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <>
-                        <span>{userCount === 0 ? "Save Owner PIN & Initialize" : "Sign In with Owner PIN"}</span>
+                        <span>{setupRequired ? "Save Owner PIN & Initialize" : "Sign In with Owner PIN"}</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
                   </button>
 
-                  {userCount > 0 && (
+                  {!setupRequired && (
                     <div className="text-center pt-2">
                       <button
                         type="button"
@@ -377,7 +393,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         )}
                       </button>
 
-                      {userCount > 0 && (
+                      {!setupRequired && (
                         <div className="text-center pt-2 border-t border-slate-800/80">
                           <button
                             type="button"
