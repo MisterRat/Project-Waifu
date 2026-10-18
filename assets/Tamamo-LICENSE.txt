@@ -1,0 +1,7 @@
+Tamamo Live2D model
+Copyright (c) 2026 MisterRat. All rights reserved.
+
+The Tamamo model was commissioned by MisterRat, who owns all rights to it,
+including commercial rights. It is NOT covered by the MIT License that applies
+to the rest of this project. It is not licensed for reuse, modification or
+redistribution outside this project.
