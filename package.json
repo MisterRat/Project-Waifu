@@ -1,7 +1,8 @@
 {
-  "name": "react-example",
+  "name": "project-waifu",
   "private": true,
-  "version": "0.7.0 Beta",
+  "version": "0.7.0-beta",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
     "predev": "node scripts/copy-vad-assets.mjs",
@@ -10,14 +11,15 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.cjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --test tests/security.test.mjs"
   },
   "dependencies": {
+    "@huggingface/transformers": "4.3.1",
     "@ricky0123/vad-web": "^0.0.29",
     "@tailwindcss/vite": "^4.1.14",
     "@types/canvas-confetti": "^1.9.0",
     "@vitejs/plugin-react": "^5.0.4",
-    "@xenova/transformers": "^2.17.2",
     "canvas-confetti": "^1.9.4",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
@@ -50,6 +52,7 @@
   "allowScripts": {
     "esbuild": true,
     "protobufjs": true,
-    "sharp": true
+    "sharp": true,
+    "onnxruntime-node": false
   }
 }

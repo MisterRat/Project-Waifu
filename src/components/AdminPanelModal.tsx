@@ -109,14 +109,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
   }, [trackingEngineEnabled]);
 
-  const getAuthHeaders = (): Record<string, string> => {
-    const savedToken = localStorage.getItem("waifu_session_token") || "";
-    const headers: Record<string, string> = {};
-    if (savedToken) {
-      headers["Authorization"] = `Bearer ${savedToken}`;
-    }
-    return headers;
-  };
+  // The httpOnly session cookie authenticates these calls; no token is kept in the page.
+  const getAuthHeaders = (): Record<string, string> => ({});
 
   // Load Users, SMTP, and Tracking config on mount/tab change
   useEffect(() => {

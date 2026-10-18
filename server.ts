@@ -6,7 +6,7 @@ import JSZip from "jszip";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import { createServer as createViteServer } from "vite";
-import { pipeline, env } from "@xenova/transformers";
+import { pipeline, env } from "@huggingface/transformers";
 import {
   getUserByEmail,
   getUserById,
@@ -52,9 +52,10 @@ import {
 } from "./server/mailer.js";
 import { DEFAULT_TTS_BASE_URL, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from "./src/lib/voiceDefaults.js";
 
-// Configure Transformers.js for Node runtime
+// Configure Transformers.js for Node runtime. Downloaded Whisper models are kept in the data
+// volume, so they survive image updates instead of being downloaded again after each one.
 env.allowLocalModels = false;
-env.useBrowserCache = false;
+env.cacheDir = path.join(process.env.DATA_DIR || path.join(process.cwd(), "data"), "whisper-models");
 
 let whisperPipeline: any = null;
 let whisperLoadingPromise: Promise<any> | null = null;
@@ -75,7 +76,11 @@ async function getWhisperPipeline() {
       // Xenova/whisper-base or Xenova/whisper-small (more accurate, slower).
       const modelName = process.env.WHISPER_MODEL || "Xenova/whisper-tiny";
       console.log(`Loading local server Whisper STT model (${modelName})...`);
-      const pipe = await pipeline("automatic-speech-recognition", modelName);
+      const pipe = await pipeline("automatic-speech-recognition", modelName, {
+        // 8-bit weights: the same model size and speed as the old @xenova/transformers default.
+        dtype: "q8",
+        device: "cpu",
+      });
       whisperPipeline = pipe;
       console.log("Local Whisper model loaded successfully!");
       return pipe;
@@ -91,7 +96,7 @@ async function getWhisperPipeline() {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Behind a reverse proxy (Nginx, Traefik, Cloudflare Tunnel...) set TRUST_PROXY so that
   // req.ip (rate limiting) and req.secure (cookie flag) reflect the real client.
@@ -135,7 +140,8 @@ async function startServer() {
   type AuthedRequest = express.Request & { user: PublicUser };
 
   const getCurrentUser = async (req: express.Request, res?: express.Response): Promise<PublicUser | null> => {
-    const sessionId = req.cookies?.waifu_session || (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : null);
+    // Sessions live only in the httpOnly cookie, out of reach of page scripts.
+    const sessionId = req.cookies?.waifu_session || null;
     if (sessionId) {
       const user = await getUserBySession(sessionId);
       if (user) return user;
@@ -185,6 +191,55 @@ async function startServer() {
       secure: req.secure || process.env.COOKIE_SECURE === "true",
     });
   };
+
+  // ---------------------------------------------------------------------------
+  // First-run setup token
+  // While no administrator has a PIN, a one-time setup token is printed to the server
+  // (container) log. Setting the first System Owner PIN requires it, so only someone who
+  // can read the log can claim the owner account, never a visitor who arrives first.
+  // ---------------------------------------------------------------------------
+  let setupToken: string | null = null;
+
+  const generateSetupToken = (): string => {
+    // Unambiguous characters, grouped for easy typing: ABCD-EFGH-JKLM
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const bytes = crypto.randomBytes(12);
+    let out = "";
+    for (let i = 0; i < 12; i++) {
+      if (i && i % 4 === 0) out += "-";
+      out += alphabet[bytes[i] % alphabet.length];
+    }
+    return out;
+  };
+
+  const setupTokenMatches = (provided: unknown): boolean => {
+    if (!setupToken || typeof provided !== "string") return false;
+    const norm = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const a = Buffer.from(norm(provided));
+    const b = Buffer.from(norm(setupToken));
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  };
+
+  /** True while no administrator has a PIN; makes sure a setup token exists and is in the log. */
+  const ensureSetupToken = async (): Promise<boolean> => {
+    if (await anyAdminHasPin()) {
+      setupToken = null;
+      return false;
+    }
+    if (!setupToken) {
+      setupToken = generateSetupToken();
+      console.log("");
+      console.log("================================================================");
+      console.log(" No System Owner PIN is set yet.");
+      console.log(` One-time setup token: ${setupToken}`);
+      console.log(" Enter it with your email and a new PIN in the sign-in window");
+      console.log(" (System Owner Setup) to become the System Owner.");
+      console.log("================================================================");
+      console.log("");
+    }
+    return true;
+  };
+  await ensureSetupToken();
 
   // ---------------------------------------------------------------------------
   // Settings visibility
@@ -311,12 +366,13 @@ async function startServer() {
         settings,
         userCount,
         hasOwner: Boolean(adminUser),
-        ownerEmail: adminUser?.email || null,
+        // First-run setup is open (no admin has a PIN): the setup token from the server log is needed.
+        setupRequired: await ensureSetupToken(),
         version: appVersion,
       });
     } catch (err: any) {
       console.error("Auth /me error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -381,52 +437,26 @@ async function startServer() {
         });
       }
 
-      // Create new user (First user automatically approved as admin)
-      const role = isFirst ? "admin" : "user";
-      const status = isFirst ? "approved" : "pending";
-      const newUser = await createUser(cleanEmail, role, status);
-
-      if (role === "admin") {
-        return res.json({
-          status: "approved",
-          isFirstUser: true,
-          message: "System Owner account initialized! Please set your Owner PIN.",
+      // The first account (the System Owner) is created only by /api/auth/owner-pin with the
+      // one-time setup token from the server log; registering never creates an administrator.
+      if (isFirst) {
+        await ensureSetupToken();
+        return res.status(400).json({
+          error: "This server has no System Owner yet. Use System Owner Setup with the one-time setup token from the server log.",
         });
       }
-
-      if (status === "approved") {
-        const smtp = await getSmtpConfig();
-        if (!smtp || !smtp.host) {
-          return res.status(400).json({ error: "SMTP email service is not configured by the Administrator. Magic links cannot be sent." });
-        }
-
-        const { token: magicToken } = await createAuthToken(newUser.id, "magic_link");
-        const appUrl = `${req.protocol}://${req.get("host")}`;
-        const magicLinkUrl = `${appUrl}/?token=${magicToken}`;
-
-        const mailRes = await sendMagicLinkEmail(cleanEmail, magicLinkUrl);
-        if (!mailRes.sent) {
-          return res.status(500).json({ error: `Failed to send Magic Link email via SMTP: ${mailRes.error || mailRes.reason || "Delivery failed"}. Please contact your administrator.` });
-        }
-
-        return res.json({
-          status: "approved",
-          isFirstUser: false,
-          message: "Account created! Magic link sent to your email address.",
-        });
-      } else {
-        const appUrl = `${req.protocol}://${req.get("host")}`;
-        await sendAdminPendingUserNotification(cleanEmail, appUrl);
-
-        return res.json({
-          status: "pending",
-          isFirstUser: false,
-          message: "Registration submitted! An Administrator will review your account request.",
-        });
-      }
+      // New accounts wait for the owner's approval.
+      await createUser(cleanEmail, "user", "pending");
+      const appUrl = `${req.protocol}://${req.get("host")}`;
+      await sendAdminPendingUserNotification(cleanEmail, appUrl);
+      return res.json({
+        status: "pending",
+        isFirstUser: false,
+        message: "Registration submitted! An Administrator will review your account request.",
+      });
     } catch (err: any) {
       console.error("Register error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -473,7 +503,7 @@ async function startServer() {
       return res.json(genericReply);
     } catch (err: any) {
       console.error("Login error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -517,11 +547,10 @@ async function startServer() {
       return res.json({
         user: publicUser,
         settings,
-        sessionId: session.sessionId,
       });
     } catch (err: any) {
       console.error("Verify error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -542,15 +571,15 @@ async function startServer() {
       let user = await getUserByEmail(cleanEmail);
 
       if (!callerIsAdmin) {
-        const setupClosed = await anyAdminHasPin();
-        const primary = await getPrimaryAdminUser();
-        const isFirstAccount = !user && (await getUserCount()) === 0;
-        const isPrimaryOwner = Boolean(user && primary && primary.id === user.id);
-        if (setupClosed || !(isFirstAccount || isPrimaryOwner)) {
+        // Without an admin session this is first-run setup only, and it needs the one-time
+        // setup token printed in the server (container) log.
+        if (!(await ensureSetupToken())) {
           return res.status(403).json({ error: "A System Owner PIN has already been set up. Sign in as the owner to change PINs." });
         }
-        if (user && user.status === "locked") {
-          return res.status(403).json({ error: "Account is locked due to 10 failed PIN attempts. Please check your email for the unlock link." });
+        if (!setupTokenMatches(req.body?.setupToken)) {
+          return res.status(403).json({
+            error: "Setup token is missing or wrong. Copy the one-time setup token from the server or container log.",
+          });
         }
       }
 
@@ -559,9 +588,12 @@ async function startServer() {
         user = await getUserByEmail(cleanEmail);
       } else {
         await updateUserRole(user.id, "admin");
+        if (!callerIsAdmin) await updateUserStatus(user.id, "approved");
         await setUserPin(user.id, pin.trim());
         await resetFailedPinAttempts(user.id);
       }
+      // A PIN now exists: first-run setup is over and the token is spent.
+      if (await anyAdminHasPin()) setupToken = null;
       if (!user) {
         return res.status(500).json({ error: "Failed to save the owner account." });
       }
@@ -581,7 +613,6 @@ async function startServer() {
         message: "System Owner PIN saved successfully!",
         user: updatedUser,
         settings,
-        sessionId: session.sessionId,
       });
     } catch (err: any) {
       console.error("Owner PIN error:", err);
@@ -612,16 +643,8 @@ async function startServer() {
       }
 
       if (!user.pin) {
-        // The original owner closed the browser after registering but before choosing a PIN.
-        // Let them finish setup here, but only while no admin anywhere has a PIN yet.
-        const primary = await getPrimaryAdminUser();
-        if (primary && primary.id === user.id && pin.trim().length >= 4 && !(await anyAdminHasPin())) {
-          await setUserPin(user.id, pin.trim());
-        } else {
-          return res.status(401).json({
-            error: "No System Owner PIN is set for this account yet. Sign in with a magic link, then set a PIN in the Admin panel.",
-          });
-        }
+        // Setting a first PIN needs the setup token (System Owner Setup); this route only checks PINs.
+        return badCredentials();
       } else if (!(await verifyUserPin(user.id, pin))) {
         const attempts = await incrementFailedPinAttempts(user.id);
         if (attempts >= 10) {
@@ -653,7 +676,6 @@ async function startServer() {
         status: "ok",
         user: updatedUser,
         settings,
-        sessionId: session.sessionId,
       });
     } catch (err: any) {
       console.error("Owner PIN login error:", err);
@@ -672,7 +694,7 @@ async function startServer() {
       return res.json({ status: "ok" });
     } catch (err: any) {
       console.error("Logout error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -697,7 +719,7 @@ async function startServer() {
       return res.json({ status: "ok", message: "System Owner PIN updated successfully!" });
     } catch (err: any) {
       console.error("Change PIN error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -708,7 +730,7 @@ async function startServer() {
       return res.json({ settings });
     } catch (err: any) {
       console.error("Get system settings error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -736,7 +758,7 @@ async function startServer() {
       return res.json({ status: "ok", message: "System settings successfully persisted to SQLite database." });
     } catch (err: any) {
       console.error("Save system settings error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -747,7 +769,7 @@ async function startServer() {
       return res.json({ settings });
     } catch (err: any) {
       console.error("Get user settings error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -770,7 +792,7 @@ async function startServer() {
       return res.json({ status: "ok", message: "User settings saved." });
     } catch (err: any) {
       console.error("Save user settings error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -782,7 +804,7 @@ async function startServer() {
       return res.json({ users });
     } catch (err: any) {
       console.error("Admin list users error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -826,7 +848,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("Approve user error:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -837,7 +859,7 @@ async function startServer() {
       await updateUserStatus(id, "rejected");
       return res.json({ status: "ok" });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -851,7 +873,7 @@ async function startServer() {
       await deleteUser(id);
       return res.json({ status: "ok" });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -866,7 +888,7 @@ async function startServer() {
       await updateUserRole(id, role);
       return res.json({ status: "ok" });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -894,7 +916,7 @@ async function startServer() {
         },
       });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -918,7 +940,7 @@ async function startServer() {
 
       return res.json({ status: "ok", message: "SMTP configuration saved." });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: "Something went wrong on the server. The details are in the server log." });
     }
   });
 
@@ -1165,7 +1187,7 @@ async function startServer() {
       }
       return res.json({ files: files.sort(), faces });
     } catch (err: any) {
-      return res.status(500).json({ error: "Could not list model files", details: err.message });
+      return res.status(500).json({ error: "Could not list model files" });
     }
   });
 
@@ -1225,7 +1247,7 @@ async function startServer() {
       return res.json({ models: result });
     } catch (err: any) {
       console.error("Error listing Live2D models:", err);
-      return res.status(500).json({ error: "Failed to list Live2D models", details: err.message });
+      return res.status(500).json({ error: "Failed to list Live2D models" });
     }
   });
 
@@ -1312,8 +1334,7 @@ async function startServer() {
     } catch (err: any) {
       console.error("Error extracting Live2D zip on server:", err);
       return res.status(500).json({
-        error: "Failed to extract and save Live2D ZIP file on server",
-        details: err.message,
+        error: "Failed to extract and save Live2D ZIP file on server. The details are in the server log.",
       });
     }
   });
@@ -1333,7 +1354,7 @@ async function startServer() {
       return res.json({ success: true, message: `Model ${id} deleted` });
     } catch (err: any) {
       console.error("Error deleting Live2D model:", err);
-      return res.status(500).json({ error: "Failed to delete model", details: err.message });
+      return res.status(500).json({ error: "Failed to delete model" });
     }
   });
 
@@ -1409,9 +1430,11 @@ async function startServer() {
       return res.json(data);
     } catch (err: any) {
       console.error("OpenWebUI Proxy Error:", err);
+      const isAdmin = (req as AuthedRequest).user?.role === "admin";
       return res.status(500).json({
         error: "Failed to connect to OpenWebUI server. Ensure the URL is accessible.",
-        details: err.message,
+        // Connection details (host names, addresses) only for the owner.
+        ...(isAdmin ? { details: err?.message } : {}),
       });
     }
   });
@@ -1458,9 +1481,10 @@ async function startServer() {
             task: "transcribe",
           });
 
-          if (result && typeof result.text === "string") {
+          const first = Array.isArray(result) ? result[0] : result;
+          if (first && typeof first.text === "string") {
             // Drop Whisper's non-speech markers such as [BLANK_AUDIO] or (music).
-            const text = result.text.replace(/\[[^\]]*\]|\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+            const text = first.text.replace(/\[[^\]]*\]|\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
             console.log("[Local Whisper STT Success]:", text || "(no speech)");
             return res.json({ text });
           }
@@ -1513,7 +1537,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("STT API Error:", err);
-      return res.status(500).json({ error: err.message || "Failed to transcribe audio" });
+      return res.status(500).json({ error: "Failed to transcribe audio." });
     }
   });
 
@@ -1580,8 +1604,11 @@ async function startServer() {
       return res.send(Buffer.from(audioBuffer));
     } catch (err: any) {
       console.error("[TTS Proxy Exception]:", err?.message || err);
+      const isAdmin = (req as AuthedRequest).user?.role === "admin";
       return res.status(500).json({
-        error: `Could not connect to OpenAI-compatible TTS server: ${err?.message || err}`,
+        error: isAdmin
+          ? `Could not connect to OpenAI-compatible TTS server: ${err?.message || err}`
+          : "Could not connect to the text-to-speech server.",
       });
     }
   });

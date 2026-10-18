@@ -178,7 +178,8 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userCount, setUserCount] = useState<number>(0);
   const [hasOwner, setHasOwner] = useState<boolean>(false);
-  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
+  // First-run setup is open (no System Owner PIN yet): setting one needs the token from the server log.
+  const [setupRequired, setSetupRequired] = useState<boolean>(false);
   const [appVersion, setAppVersion] = useState<string>(`v${pkg.version}`);
   const [authLoaded, setAuthLoaded] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -193,20 +194,14 @@ export default function App() {
 
   const fetchAuthMe = async () => {
     try {
-      const savedToken = localStorage.getItem("waifu_session_token") || "";
-      const headers: Record<string, string> = {};
-      if (savedToken) {
-        headers["Authorization"] = `Bearer ${savedToken}`;
-      }
-      const res = await fetch("/api/auth/me", {
-        headers,
-        credentials: "include",
-      });
+      // The session lives only in the httpOnly cookie; drop any token older versions kept here.
+      localStorage.removeItem("waifu_session_token");
+      const res = await fetch("/api/auth/me", { credentials: "include" });
       const data = await res.json();
       if (res.ok) {
         setUserCount(data.userCount || 0);
         setHasOwner(Boolean(data.hasOwner));
-        if (data.ownerEmail) setOwnerEmail(data.ownerEmail);
+        setSetupRequired(Boolean(data.setupRequired));
         if (data.version) {
           setAppVersion(`v${data.version}`);
         }
@@ -259,11 +254,7 @@ export default function App() {
   const syncPendingRef = useRef<any>(null);
 
   const postSettings = async (payload: any) => {
-    const savedToken = localStorage.getItem("waifu_session_token") || "";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (savedToken) {
-      headers["Authorization"] = `Bearer ${savedToken}`;
-    }
     const body = JSON.stringify(payload);
     // The admin endpoint saves both the system defaults and the admin's own settings.
     const url = currentUser?.role === "admin" ? "/api/system/settings" : "/api/user/settings";
@@ -462,6 +453,8 @@ export default function App() {
           onClose={() => setIsAuthModalOpen(false)}
           currentUser={currentUser}
           userCount={userCount}
+          hasOwner={hasOwner}
+          setupRequired={setupRequired}
           onLoginSuccess={(user, settings) => {
             setCurrentUser(user);
             if (settings) {
@@ -903,12 +896,9 @@ export default function App() {
         currentUser={currentUser}
         userCount={userCount}
         hasOwner={hasOwner}
-        ownerEmail={ownerEmail}
-        onLoginSuccess={(user, settings, sessionId) => {
+        setupRequired={setupRequired}
+        onLoginSuccess={(user, settings) => {
           setCurrentUser(user);
-          if (sessionId) {
-            localStorage.setItem("waifu_session_token", sessionId);
-          }
           if (settings) {
             applyServerSettings(settings);
           }
@@ -916,16 +906,10 @@ export default function App() {
         }}
         onLogout={async () => {
           try {
-            const savedToken = localStorage.getItem("waifu_session_token") || "";
-            await fetch("/api/auth/logout", {
-              method: "POST",
-              headers: savedToken ? { Authorization: `Bearer ${savedToken}` } : {},
-              credentials: "include",
-            });
+            await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
           } catch (e) {
             console.error(e);
           }
-          localStorage.removeItem("waifu_session_token");
           setCurrentUser(null);
         }}
       />

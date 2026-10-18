@@ -453,21 +453,9 @@ export async function createSession(userId: string) {
 }
 
 export async function getUserBySession(sessionId: string) {
-  const { db, save } = await getDb();
-  
-  // Ensure at least one admin exists (first registered user)
-  const adminCheck = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
-  const hasAdmin = adminCheck.step();
-  adminCheck.free();
-  if (!hasAdmin) {
-    const firstUserStmt = db.prepare("SELECT id FROM users ORDER BY created_at ASC LIMIT 1");
-    if (firstUserStmt.step()) {
-      const firstId = firstUserStmt.getAsObject().id as string;
-      db.run("UPDATE users SET role = 'admin' WHERE id = ?", [firstId]);
-      save();
-    }
-    firstUserStmt.free();
-  }
+  // (Never promotes anyone: if every admin is removed, the next owner is set up with the
+  // one-time setup token from the server log.)
+  const { db } = await getDb();
 
   const stmt = db.prepare(`
     SELECT u.id, u.email, u.role, u.status, u.created_at, u.last_login FROM sessions s
